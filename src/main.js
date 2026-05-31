@@ -3,6 +3,16 @@ const { listen } = window.__TAURI__.event;
 
 document.addEventListener('contextmenu', e => e.preventDefault());
 
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+  });
+});
+
 // DOM refs
 const lastText       = document.getElementById('last-text');
 const copyBtn        = document.getElementById('copy-btn');
@@ -27,11 +37,35 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
-// State badge
+// Timer (runs inside the button label)
+let timerInterval = null;
+let timerStart = null;
+
+function startTimer() {
+  timerStart = Date.now();
+  timerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - timerStart) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
+    recordLabel.textContent = `${m}:${String(s).padStart(2, '0')}`;
+  }, 500);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
+
+// State
 function updateBadge(state) {
-  recordLabel.textContent = state === 'recording' ? 'Stop' : state === 'transcribing' ? 'Transcribing...' : 'Record';
   recordBtn.className = `record-btn${state === 'recording' ? ' recording' : ''}`;
   recordBtn.disabled = state === 'transcribing';
+  if (state === 'recording') {
+    startTimer();
+  } else {
+    stopTimer();
+    recordLabel.textContent = state === 'transcribing' ? 'Transcribing...' : 'Record';
+  }
 }
 
 // History
@@ -167,6 +201,15 @@ async function loadSettings() {
   maxDurInput.value = s.max_duration_secs;
   typeAtCursorInput.checked = s.type_at_cursor ?? false;
   historyLimitInput.value = s.history_limit ?? 10;
+  renderRecordMeta(s);
+}
+
+function renderRecordMeta(s) {
+  const meta = document.getElementById('record-meta');
+  const langOption = langSelect.querySelector(`option[value="${s.language ?? 'auto'}"]`);
+  const langLabel = langOption ? langOption.textContent : (s.language ?? 'Auto-detect');
+  const chips = [s.model_name, langLabel];
+  meta.innerHTML = chips.map(c => `<span class="meta-chip">${c}</span>`).join('');
 }
 
 saveBtn.onclick = async () => {
@@ -212,6 +255,8 @@ listen('transcription-done', (e) => {
   lastText.classList.remove('empty');
   copyBtn.disabled = false;
   loadHistory();
+  // Switch to record tab so the result is visible
+  document.querySelector('.tab-btn[data-tab="record"]').click();
 });
 
 listen('transcription-error', (e) => showToast(`Error: ${e.payload}`));
