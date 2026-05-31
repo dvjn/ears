@@ -44,8 +44,11 @@ pub fn load_settings(app: &AppHandle, state: &AppState) {
     if let Some(v) = store.get("max_duration_secs").and_then(|v| v.as_u64()) {
         settings.max_duration_secs = v as u32;
     }
-    if let Some(v) = store.get("type_at_cursor").and_then(|v| v.as_bool()) {
-        settings.type_at_cursor = v;
+    if let Some(v) = store.get("auto_type").and_then(|v| v.as_bool()) {
+        settings.auto_type = v;
+    }
+    if let Some(v) = store.get("auto_copy").and_then(|v| v.as_bool()) {
+        settings.auto_copy = v;
     }
     if let Some(v) = store.get("history_limit").and_then(|v| v.as_u64()) {
         settings.history_limit = (v as usize).clamp(1, 9999);
@@ -74,7 +77,8 @@ fn persist_settings(app: &AppHandle, settings: &Settings) {
     store.set("model_name", settings.model_name.clone());
     store.set("language", serde_json::json!(settings.language));
     store.set("max_duration_secs", settings.max_duration_secs);
-    store.set("type_at_cursor", settings.type_at_cursor);
+    store.set("auto_type", settings.auto_type);
+    store.set("auto_copy", settings.auto_copy);
     store.set("history_limit", settings.history_limit);
     let _ = store.save();
 }
@@ -296,13 +300,20 @@ async fn do_stop_and_transcribe(app: AppHandle) -> anyhow::Result<()> {
     })
     .await??;
 
+    let (auto_copy, auto_type) = {
+        let s = state.settings.lock().unwrap();
+        (s.auto_copy, s.auto_type)
+    };
+
     // Copy to clipboard via the plugin's system clipboard (works with hidden window)
-    if let Err(e) = app.clipboard().write_text(&text) {
-        eprintln!("clipboard write failed: {e}");
+    if auto_copy {
+        if let Err(e) = app.clipboard().write_text(&text) {
+            eprintln!("clipboard write failed: {e}");
+        }
     }
 
     // Type transcribed text directly at the cursor position
-    if state.settings.lock().unwrap().type_at_cursor {
+    if auto_type {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let text_to_type = text.clone();
         tokio::task::spawn_blocking(move || {
@@ -312,11 +323,12 @@ async fn do_stop_and_transcribe(app: AppHandle) -> anyhow::Result<()> {
         }).await.ok();
     }
 
-    // Notification — skip when typing, since the text appears directly at cursor
-    if !state.settings.lock().unwrap().type_at_cursor {
+    // Notification — skip when typing at cursor (text appears there directly)
+    if !auto_type {
         let preview: String = text.chars().take(60).collect();
         let body = if text.chars().count() > 60 { format!("{preview}...") } else { preview };
-        let _ = app.notification().builder().title("ears - copied").body(body).show();
+        let title = if auto_copy { "ears - copied" } else { "ears - transcribed" };
+        let _ = app.notification().builder().title(title).body(body).show();
     }
 
     // Update history

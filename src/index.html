@@ -46,11 +46,17 @@
     <section>
       <h3>Settings</h3>
       <div class="form-row">
-        <label>Active model</label>
+        <div class="form-label-group">
+          <span class="form-label">Active model</span>
+          <span class="form-hint">Whisper model used for transcription</span>
+        </div>
         <select id="model-select"></select>
       </div>
       <div class="form-row">
-        <label>Language</label>
+        <div class="form-label-group">
+          <span class="form-label">Language</span>
+          <span class="form-hint">Language spoken in the recording</span>
+        </div>
         <select id="language-select">
           <option value="auto">Auto-detect</option>
           <option value="en" selected>English</option>
@@ -69,18 +75,37 @@
         </select>
       </div>
       <div class="form-row">
-        <label>Max duration (s)</label>
+        <div class="form-label-group">
+          <span class="form-label">Max duration</span>
+          <span class="form-hint">Auto-stop recording after this many seconds</span>
+        </div>
         <input id="max-duration-input" type="number" min="5" max="600" value="120" />
       </div>
       <div class="form-row">
-        <label>Type at cursor</label>
+        <div class="form-label-group">
+          <span class="form-label">Auto copy</span>
+          <span class="form-hint">Copy transcription to clipboard</span>
+        </div>
         <label class="toggle">
-          <input id="type-at-cursor-input" type="checkbox" />
+          <input id="auto-copy-input" type="checkbox" checked />
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
         </label>
       </div>
       <div class="form-row">
-        <label>History limit</label>
+        <div class="form-label-group">
+          <span class="form-label">Auto type</span>
+          <span class="form-hint">Type transcription at cursor position</span>
+        </div>
+        <label class="toggle">
+          <input id="auto-type-input" type="checkbox" />
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div class="form-row">
+        <div class="form-label-group">
+          <span class="form-label">History limit</span>
+          <span class="form-hint">Max number of past transcriptions to keep</span>
+        </div>
         <input id="history-limit-input" type="number" min="1" max="9999" value="10" />
       </div>
       <div class="save-row">

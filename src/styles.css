@@ -252,7 +252,11 @@ section {
 
 .form-row:last-child { margin-bottom: 0; }
 
-label { color: var(--text-dim); min-width: 110px; font-size: 12px; }
+label { color: var(--text-dim); font-size: 12px; }
+
+.form-label-group { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.form-label { color: var(--text-dim); font-size: 12px; }
+.form-hint { color: var(--text-dim); font-size: 10px; opacity: 0.55; }
 
 input:not([type="checkbox"]), select {
   background: var(--bg);
@@ -261,7 +265,8 @@ input:not([type="checkbox"]), select {
   color: var(--text);
   font-size: 12px;
   padding: 4px 8px;
-  flex: 1;
+  width: 110px;
+  flex-shrink: 0;
   outline: none;
   font-family: inherit;
   color-scheme: dark;
@@ -285,6 +290,8 @@ select option { background: #1a1a1a; color: #e0e0e0; }
   cursor: pointer;
   flex: 1;
 }
+
+.form-label-group ~ .toggle { flex: 0; }
 
 .toggle input[type="checkbox"] {
   position: absolute;

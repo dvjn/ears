@@ -23,7 +23,8 @@ const modelsList     = document.getElementById('models-list');
 const modelSelect        = document.getElementById('model-select');
 const langSelect         = document.getElementById('language-select');
 const maxDurInput        = document.getElementById('max-duration-input');
-const typeAtCursorInput  = document.getElementById('type-at-cursor-input');
+const autoCopyInput      = document.getElementById('auto-copy-input');
+const autoTypeInput      = document.getElementById('auto-type-input');
 const historyLimitInput  = document.getElementById('history-limit-input');
 const saveBtn            = document.getElementById('save-btn');
 const toast          = document.getElementById('toast');
@@ -199,7 +200,8 @@ async function loadSettings() {
   modelSelect.value = s.model_name;
   langSelect.value = s.language ?? 'auto';
   maxDurInput.value = s.max_duration_secs;
-  typeAtCursorInput.checked = s.type_at_cursor ?? false;
+  autoCopyInput.checked = s.auto_copy ?? true;
+  autoTypeInput.checked = s.auto_type ?? false;
   historyLimitInput.value = s.history_limit ?? 10;
   renderRecordMeta(s);
 }
@@ -219,7 +221,8 @@ saveBtn.onclick = async () => {
         model_name: modelSelect.value || 'base.en',
         language: langSelect.value === 'auto' ? null : langSelect.value,
         max_duration_secs: parseInt(maxDurInput.value, 10),
-        type_at_cursor: typeAtCursorInput.checked,
+        auto_copy: autoCopyInput.checked,
+        auto_type: autoTypeInput.checked,
         history_limit: Math.min(9999, Math.max(1, parseInt(historyLimitInput.value, 10) || 10)),
       }
     });

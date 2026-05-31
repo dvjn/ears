@@ -22,12 +22,15 @@ pub struct Settings {
     pub language: Option<String>,
     pub max_duration_secs: u32,
     #[serde(default)]
-    pub type_at_cursor: bool,
+    pub auto_type: bool,
+    #[serde(default = "default_auto_copy")]
+    pub auto_copy: bool,
     #[serde(default = "default_history_limit")]
     pub history_limit: usize,
 }
 
 fn default_history_limit() -> usize { 10 }
+fn default_auto_copy() -> bool { true }
 
 impl Default for Settings {
     fn default() -> Self {
@@ -35,7 +38,8 @@ impl Default for Settings {
             model_name: "base.en".to_string(),
             language: Some("en".to_string()),
             max_duration_secs: 120,
-            type_at_cursor: false,
+            auto_type: false,
+            auto_copy: true,
             history_limit: 10,
         }
     }
