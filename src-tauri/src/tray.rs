@@ -11,7 +11,7 @@ pub const TRAY_ID: &str = "ears-tray";
 
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let start_item = MenuItem::with_id(app, "start", "Start Recording", true, None::<&str>)?;
-    let open_item = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
+    let open_item = MenuItem::with_id(app, "open", "Settings", true, None::<&str>)?;
     let last_result_item = MenuItem::with_id(
         app,
         "last_result",

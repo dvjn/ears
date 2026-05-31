@@ -1,3 +1,4 @@
+use enigo::{Enigo, Keyboard, Settings as EnigoSettings};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -42,6 +43,9 @@ pub fn load_settings(app: &AppHandle, state: &AppState) {
     if let Some(v) = store.get("max_duration_secs").and_then(|v| v.as_u64()) {
         settings.max_duration_secs = v as u32;
     }
+    if let Some(v) = store.get("type_at_cursor").and_then(|v| v.as_bool()) {
+        settings.type_at_cursor = v;
+    }
 }
 
 fn persist_settings(app: &AppHandle, settings: &Settings) {
@@ -49,6 +53,7 @@ fn persist_settings(app: &AppHandle, settings: &Settings) {
     store.set("model_name", settings.model_name.clone());
     store.set("language", serde_json::json!(settings.language));
     store.set("max_duration_secs", settings.max_duration_secs);
+    store.set("type_at_cursor", settings.type_at_cursor);
     let _ = store.save();
 }
 
@@ -275,10 +280,23 @@ async fn do_stop_and_transcribe(app: AppHandle) -> anyhow::Result<()> {
         eprintln!("clipboard write failed: {e}");
     }
 
-    // Notification
-    let preview: String = text.chars().take(60).collect();
-    let body = if text.chars().count() > 60 { format!("{preview}...") } else { preview };
-    let _ = app.notification().builder().title("ears - copied").body(body).show();
+    // Type transcribed text directly at the cursor position
+    if state.settings.lock().unwrap().type_at_cursor {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let text_to_type = text.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Ok(mut enigo) = Enigo::new(&EnigoSettings::default()) {
+                let _ = enigo.text(&text_to_type);
+            }
+        }).await.ok();
+    }
+
+    // Notification — skip when typing, since the text appears directly at cursor
+    if !state.settings.lock().unwrap().type_at_cursor {
+        let preview: String = text.chars().take(60).collect();
+        let body = if text.chars().count() > 60 { format!("{preview}...") } else { preview };
+        let _ = app.notification().builder().title("ears - copied").body(body).show();
+    }
 
     // Update history
     {

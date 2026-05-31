@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rubato::{FftFixedIn, Resampler};
+use rubato::{audioadapter_buffers::direct::InterleavedSlice, Fft, FixedSync, Resampler};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -21,7 +21,7 @@ pub fn start_recording() -> Result<ActiveRecording> {
         .ok_or_else(|| anyhow!("no input device available"))?;
 
     let config = device.default_input_config()?;
-    let sample_rate = config.sample_rate().0;
+    let sample_rate = config.sample_rate();
     let channels = config.channels() as usize;
     let sample_format = config.sample_format();
     let stream_config: cpal::StreamConfig = config.into();
@@ -142,36 +142,24 @@ pub fn resample(samples: Vec<f32>, from_rate: u32) -> Result<Vec<f32>> {
     }
 
     let chunk_size = 1024usize;
-    let mut resampler = FftFixedIn::<f32>::new(from_rate as usize, 16000, chunk_size, 2, 1)?;
+    let channels = 1usize;
+    let nbr_input_frames = samples.len();
 
-    let mut output = Vec::new();
-    let mut pos = 0;
+    let mut resampler = Fft::<f32>::new(from_rate as usize, 16000, chunk_size, 2, channels, FixedSync::Input)
+        .map_err(|e| anyhow::anyhow!("failed to create resampler: {e}"))?;
 
-    while pos + chunk_size <= samples.len() {
-        let chunk = vec![samples[pos..pos + chunk_size].to_vec()];
-        let resampled = resampler.process(&chunk, None)?;
-        output.extend_from_slice(&resampled[0]);
-        pos += chunk_size;
-    }
+    let needed_out = resampler.process_all_needed_output_len(nbr_input_frames);
+    let mut outdata = vec![0.0f32; needed_out];
 
-    if pos < samples.len() {
-        let mut last_chunk = samples[pos..].to_vec();
-        last_chunk.resize(chunk_size, 0.0);
-        let chunk = vec![last_chunk];
-        let resampled = resampler.process(&chunk, None)?;
-        // Ceiling division to avoid losing the last output sample to integer truncation
-        let tail_in = samples.len() - pos;
-        let valid = ((tail_in * 16000 + from_rate as usize - 1) / from_rate as usize)
-            .min(resampled[0].len());
-        output.extend_from_slice(&resampled[0][..valid]);
-    }
+    let input_adapter = InterleavedSlice::new(&samples, channels, nbr_input_frames)
+        .map_err(|e| anyhow::anyhow!("input adapter error: {e}"))?;
+    let mut output_adapter = InterleavedSlice::new_mut(&mut outdata, channels, needed_out)
+        .map_err(|e| anyhow::anyhow!("output adapter error: {e}"))?;
 
-    // Flush FftFixedIn's internal OLA overlap buffer — it holds back output_delay samples
-    let flush = vec![vec![0.0f32; chunk_size]];
-    if let Ok(flushed) = resampler.process(&flush, None) {
-        let take = resampler.output_delay().min(flushed[0].len());
-        output.extend_from_slice(&flushed[0][..take]);
-    }
+    let (_nbr_in, nbr_out) = resampler
+        .process_all_into_buffer(&input_adapter, &mut output_adapter, nbr_input_frames, None)
+        .map_err(|e| anyhow::anyhow!("resampling failed: {e}"))?;
 
-    Ok(output)
+    outdata.truncate(nbr_out);
+    Ok(outdata)
 }

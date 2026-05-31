@@ -21,6 +21,8 @@ pub struct Settings {
     pub model_name: String,
     pub language: Option<String>,
     pub max_duration_secs: u32,
+    #[serde(default)]
+    pub type_at_cursor: bool,
 }
 
 impl Default for Settings {
@@ -29,6 +31,7 @@ impl Default for Settings {
             model_name: "base.en".to_string(),
             language: Some("en".to_string()),
             max_duration_secs: 120,
+            type_at_cursor: false,
         }
     }
 }
