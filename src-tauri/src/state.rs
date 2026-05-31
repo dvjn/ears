@@ -23,7 +23,11 @@ pub struct Settings {
     pub max_duration_secs: u32,
     #[serde(default)]
     pub type_at_cursor: bool,
+    #[serde(default = "default_history_limit")]
+    pub history_limit: usize,
 }
+
+fn default_history_limit() -> usize { 10 }
 
 impl Default for Settings {
     fn default() -> Self {
@@ -32,11 +36,10 @@ impl Default for Settings {
             language: Some("en".to_string()),
             max_duration_secs: 120,
             type_at_cursor: false,
+            history_limit: 10,
         }
     }
 }
-
-pub const HISTORY_MAX: usize = 20;
 
 pub struct AppState {
     pub recording: Mutex<RecordingState>,

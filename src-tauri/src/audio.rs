@@ -128,6 +128,7 @@ fn build_stream_i16(
     Ok(stream)
 }
 
+
 pub fn stop_and_collect(mut recording: ActiveRecording) -> Vec<f32> {
     recording.stop_flag.store(true, Ordering::Release);
     if let Some(handle) = recording.thread.take() {

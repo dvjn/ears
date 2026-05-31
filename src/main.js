@@ -4,7 +4,6 @@ const { listen } = window.__TAURI__.event;
 document.addEventListener('contextmenu', e => e.preventDefault());
 
 // DOM refs
-const stateBadge     = document.getElementById('state-badge');
 const lastText       = document.getElementById('last-text');
 const copyBtn        = document.getElementById('copy-btn');
 const recordBtn      = document.getElementById('record-btn');
@@ -15,6 +14,7 @@ const modelSelect        = document.getElementById('model-select');
 const langSelect         = document.getElementById('language-select');
 const maxDurInput        = document.getElementById('max-duration-input');
 const typeAtCursorInput  = document.getElementById('type-at-cursor-input');
+const historyLimitInput  = document.getElementById('history-limit-input');
 const saveBtn            = document.getElementById('save-btn');
 const toast          = document.getElementById('toast');
 
@@ -29,8 +29,6 @@ function showToast(msg) {
 
 // State badge
 function updateBadge(state) {
-  stateBadge.className = `badge ${state}`;
-  stateBadge.textContent = state;
   recordLabel.textContent = state === 'recording' ? 'Stop' : state === 'transcribing' ? 'Transcribing...' : 'Record';
   recordBtn.className = `record-btn${state === 'recording' ? ' recording' : ''}`;
   recordBtn.disabled = state === 'transcribing';
@@ -78,9 +76,9 @@ function renderHistory(history) {
       await loadHistory();
     };
 
-    item.appendChild(span);
     item.appendChild(copyBtn);
     item.appendChild(removeBtn);
+    item.appendChild(span);
     historyList.appendChild(item);
   });
 }
@@ -168,6 +166,7 @@ async function loadSettings() {
   langSelect.value = s.language ?? 'auto';
   maxDurInput.value = s.max_duration_secs;
   typeAtCursorInput.checked = s.type_at_cursor ?? false;
+  historyLimitInput.value = s.history_limit ?? 10;
 }
 
 saveBtn.onclick = async () => {
@@ -178,6 +177,7 @@ saveBtn.onclick = async () => {
         language: langSelect.value === 'auto' ? null : langSelect.value,
         max_duration_secs: parseInt(maxDurInput.value, 10),
         type_at_cursor: typeAtCursorInput.checked,
+        history_limit: Math.min(9999, Math.max(1, parseInt(historyLimitInput.value, 10) || 10)),
       }
     });
     showToast('Settings saved');

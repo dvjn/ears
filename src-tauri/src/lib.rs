@@ -28,11 +28,22 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // Load persisted settings before tray setup
+            // Load persisted settings and history before tray setup
             let app_state = app.state::<AppState>();
             commands::load_settings(&handle, &app_state);
+            commands::load_history(&handle, &app_state);
 
             tray::setup_tray(&handle)?;
+
+            // If launched with `ears toggle`, start recording immediately
+            if std::env::args().nth(1).as_deref() == Some("toggle") {
+                let app_clone = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = commands::toggle_recording(app_clone).await {
+                        eprintln!("auto-toggle error: {e}");
+                    }
+                });
+            }
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();

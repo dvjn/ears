@@ -9,7 +9,6 @@
 <body>
   <div class="header">
     <h2>ears</h2>
-    <span id="state-badge" class="badge idle">idle</span>
   </div>
 
   <div class="record-area">
@@ -74,6 +73,10 @@
         <input id="type-at-cursor-input" type="checkbox" />
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
       </label>
+    </div>
+    <div class="form-row">
+      <label>History limit</label>
+      <input id="history-limit-input" type="number" min="1" max="9999" value="10" />
     </div>
     <div class="save-row">
       <button id="save-btn">Save Settings</button>

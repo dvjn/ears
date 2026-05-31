@@ -8,12 +8,13 @@ use tauri_plugin_store::StoreExt;
 use crate::{
     audio,
     models,
-    state::{AppState, RecordingState, Settings, HISTORY_MAX},
+    state::{AppState, RecordingState, Settings},
     transcribe,
     tray::{set_tray_last_result, set_tray_recording},
 };
 
 const STORE_FILE: &str = "settings.json";
+
 
 #[derive(Serialize)]
 pub struct ModelStatus {
@@ -46,6 +47,26 @@ pub fn load_settings(app: &AppHandle, state: &AppState) {
     if let Some(v) = store.get("type_at_cursor").and_then(|v| v.as_bool()) {
         settings.type_at_cursor = v;
     }
+    if let Some(v) = store.get("history_limit").and_then(|v| v.as_u64()) {
+        settings.history_limit = (v as usize).clamp(1, 9999);
+    }
+}
+
+pub fn load_history(app: &AppHandle, state: &AppState) {
+    let Ok(dir) = app.path().app_data_dir() else { return };
+    let path = dir.join("history.json");
+    let Ok(data) = std::fs::read_to_string(path) else { return };
+    let Ok(history) = serde_json::from_str::<Vec<String>>(&data) else { return };
+    *state.history.lock().unwrap() = history;
+}
+
+fn save_history(app: &AppHandle, history: &[String]) {
+    let Ok(dir) = app.path().app_data_dir() else { return };
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("history.json");
+    if let Ok(data) = serde_json::to_string(history) {
+        let _ = std::fs::write(path, data);
+    }
 }
 
 fn persist_settings(app: &AppHandle, settings: &Settings) {
@@ -54,6 +75,7 @@ fn persist_settings(app: &AppHandle, settings: &Settings) {
     store.set("language", serde_json::json!(settings.language));
     store.set("max_duration_secs", settings.max_duration_secs);
     store.set("type_at_cursor", settings.type_at_cursor);
+    store.set("history_limit", settings.history_limit);
     let _ = store.save();
 }
 
@@ -121,10 +143,11 @@ pub fn get_history(state: State<AppState>) -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn remove_history_item(state: State<AppState>, index: usize) {
+pub fn remove_history_item(app: AppHandle, state: State<AppState>, index: usize) {
     let mut history = state.history.lock().unwrap();
     if index < history.len() {
         history.remove(index);
+        save_history(&app, &history);
     }
 }
 
@@ -198,6 +221,7 @@ pub async fn toggle_recording(app: AppHandle) -> anyhow::Result<()> {
             set_tray_recording(&app, true);
             let _ = app.emit("recording-state-changed", "recording");
 
+
             let app_clone = app.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(max_secs as u64)).await;
@@ -238,6 +262,7 @@ async fn do_stop_and_transcribe(app: AppHandle) -> anyhow::Result<()> {
 
     set_tray_recording(&app, false);
     let _ = app.emit("recording-state-changed", "transcribing");
+
 
     // join() is blocking — run it off the async executor
     let raw_samples = tokio::task::spawn_blocking(move || audio::stop_and_collect(session)).await?;
@@ -300,9 +325,11 @@ async fn do_stop_and_transcribe(app: AppHandle) -> anyhow::Result<()> {
 
     // Update history
     {
+        let limit = state.settings.lock().unwrap().history_limit;
         let mut history = state.history.lock().unwrap();
         history.insert(0, text.clone());
-        history.truncate(HISTORY_MAX);
+        history.truncate(limit);
+        save_history(&app, &history);
     }
 
     *state.last_result.lock().unwrap() = Some(text.clone());

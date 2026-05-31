@@ -27,12 +27,13 @@
         "title": "ears",
         "width": 420,
         "height": 460,
-        "resizable": false,
+        "resizable": true,
         "visible": false,
         "skipTaskbar": true,
         "decorations": false
       }
     ],
-    "withGlobalTauri": true
+    "withGlobalTauri": true,
+    "enableGTKAppId": true
   }
 }
