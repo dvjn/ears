@@ -196,11 +196,7 @@ pub async fn toggle_recording(app: AppHandle) -> anyhow::Result<()> {
 
             if !model_path.exists() {
                 *state.recording.lock().unwrap() = RecordingState::Idle;
-                let _ = app.notification()
-                    .builder()
-                    .title("ears - no model")
-                    .body(format!("Model '{model_name}' is not downloaded. Open settings to download it."))
-                    .show();
+                let _ = app.emit("error-no-model", &model_name);
                 return Ok(());
             }
 
@@ -270,7 +266,7 @@ async fn do_stop_and_transcribe(app: AppHandle) -> anyhow::Result<()> {
     if raw_samples.is_empty() {
         *state.recording.lock().unwrap() = RecordingState::Idle;
         let _ = app.emit("recording-state-changed", "idle");
-        let _ = app.notification().builder().title("ears").body("No audio recorded.").show();
+        let _ = app.emit("transcription-error", "No audio captured.");
         return Ok(());
     }
 

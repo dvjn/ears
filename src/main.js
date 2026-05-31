@@ -234,7 +234,7 @@ recordBtn.onclick = async () => {
   try {
     await invoke('cmd_toggle_recording');
   } catch (e) {
-    showToast(`Error: ${e}`);
+    showToast(String(e));
   }
 };
 
@@ -259,7 +259,12 @@ listen('transcription-done', (e) => {
   document.querySelector('.tab-btn[data-tab="record"]').click();
 });
 
-listen('transcription-error', (e) => showToast(`Error: ${e.payload}`));
+listen('transcription-error', (e) => showToast(e.payload));
+
+listen('error-no-model', (e) => {
+  showToast(`Model "${e.payload}" not downloaded — go to Settings`);
+  document.querySelector('.tab-btn[data-tab="settings"]').click();
+});
 
 listen('download-progress', (e) => {
   const { model, downloaded, total, done } = e.payload;
