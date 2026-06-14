@@ -25,6 +25,9 @@ cpal = "0.17"
 reqwest = { version = "0.13", features = ["multipart", "json"] }
 rubato = { version = "3.0", features = ["fft_resampler"] }
 anyhow = "1"
+enigo = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
 enigo = { version = "0.6", features = ["wayland", "x11rb"] }
 
 [profile.release]

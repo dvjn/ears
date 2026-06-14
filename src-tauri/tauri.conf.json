@@ -9,12 +9,30 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Productivity",
+    "publisher": "dvjn",
+    "copyright": "Copyright © 2026 dvjn",
+    "shortDescription": "voice dictation app",
+    "longDescription": "a voice dictation app. press a shortcut, speak, and ears transcribes what you said using an openai-compatible api.",
+    "homepage": "https://github.com/dvjn/ears",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.13"
+    }
   },
   "app": {
     "security": {
