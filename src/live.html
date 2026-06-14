@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ears - live</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --surface: #252525;
+      --border: #333;
+      --text: #e0e0e0;
+      --text-dim: #888;
+      --accent: #4a9eff;
+      --danger: #ff5555;
+      --radius: 6px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      cursor: default;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    body {
+      display: flex;
+      align-items: flex-end;
+      padding: 12px;
+    }
+    #panel {
+      width: 100%;
+      max-height: 190px;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      color: var(--text);
+    }
+    .brand .rec {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+    }
+    #stop {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 20px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    #stop:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+    #stop .sq { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
+    #text {
+      font-size: 14px;
+      line-height: 1.5;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    #text::-webkit-scrollbar { display: none; }
+    .committed { color: var(--text); }
+    .partial { color: var(--text-dim); }
+    #text.placeholder { color: var(--text-dim); }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <div class="bar">
+      <span class="brand"><span class="rec"></span>ears</span>
+      <button id="stop"><span class="sq"></span>Stop</button>
+    </div>
+    <div id="text" class="placeholder">Start speaking…</div>
+  </div>
+  <script src="live.js"></script>
+</body>
+</html>

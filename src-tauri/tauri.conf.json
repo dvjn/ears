@@ -18,7 +18,7 @@
   },
   "app": {
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
       "capabilities": ["default"]
     },
     "windows": [
@@ -31,6 +31,21 @@
         "visible": false,
         "skipTaskbar": true,
         "decorations": false
+      },
+      {
+        "label": "live",
+        "url": "live.html",
+        "title": "ears - live",
+        "width": 720,
+        "height": 200,
+        "resizable": false,
+        "visible": false,
+        "focus": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "shadow": false,
+        "transparent": true
       }
     ],
     "withGlobalTauri": true,

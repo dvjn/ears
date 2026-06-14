@@ -22,9 +22,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 
 cpal = "0.17"
-whisper-rs = { version = "0.16", features = ["cuda"] }
-reqwest = { version = "0.13", features = ["stream"] }
-futures-util = "0.3"
+reqwest = { version = "0.13", features = ["multipart", "json"] }
 rubato = { version = "3.0", features = ["fft_resampler"] }
 anyhow = "1"
 enigo = { version = "0.6", features = ["wayland", "x11rb"] }

@@ -1,26 +1,37 @@
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::Mutex;
 use tauri::menu::MenuItem;
-use whisper_rs::WhisperContext;
 
-use crate::audio::ActiveRecording;
+use crate::live::LiveSession;
 
 pub enum RecordingState {
     Idle,
-    Recording {
-        #[allow(dead_code)]
-        start: Instant,
-        session: ActiveRecording,
+    LiveRecording {
+        session: LiveSession,
     },
     Transcribing,
 }
 
+fn default_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
-    pub model_name: String,
+    #[serde(default = "default_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default = "default_language")]
     pub language: Option<String>,
+    #[serde(default = "default_max_duration_secs")]
     pub max_duration_secs: u32,
+    /// Auto-stop after this many seconds of silence (no new transcribed text).
+    /// 0 disables silence-based auto-stop.
+    #[serde(default = "default_silence_stop_secs")]
+    pub silence_stop_secs: u32,
     #[serde(default)]
     pub auto_type: bool,
     #[serde(default = "default_auto_copy")]
@@ -31,13 +42,19 @@ pub struct Settings {
 
 fn default_history_limit() -> usize { 10 }
 fn default_auto_copy() -> bool { true }
+fn default_silence_stop_secs() -> u32 { 3 }
+fn default_max_duration_secs() -> u32 { 120 }
+fn default_language() -> Option<String> { Some("en".to_string()) }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            model_name: "base.en".to_string(),
+            base_url: default_base_url(),
+            api_key: String::new(),
+            model: String::new(),
             language: Some("en".to_string()),
             max_duration_secs: 120,
+            silence_stop_secs: 3,
             auto_type: false,
             auto_copy: true,
             history_limit: 10,
@@ -47,8 +64,6 @@ impl Default for Settings {
 
 pub struct AppState {
     pub recording: Mutex<RecordingState>,
-    pub whisper_ctx: Arc<Mutex<Option<WhisperContext>>>,
-    pub loaded_model: Mutex<Option<String>>,
     pub settings: Mutex<Settings>,
     pub last_result: Mutex<Option<String>>,
     pub history: Mutex<Vec<String>>,
@@ -60,8 +75,6 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             recording: Mutex::new(RecordingState::Idle),
-            whisper_ctx: Arc::new(Mutex::new(None)),
-            loaded_model: Mutex::new(None),
             settings: Mutex::new(Settings::default()),
             last_result: Mutex::new(None),
             history: Mutex::new(Vec::new()),

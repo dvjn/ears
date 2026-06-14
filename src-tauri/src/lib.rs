@@ -1,8 +1,6 @@
-mod audio;
 mod commands;
-mod models;
+mod live;
 mod state;
-mod transcribe;
 mod tray;
 
 use commands::*;
@@ -28,14 +26,12 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // Load persisted settings and history before tray setup
             let app_state = app.state::<AppState>();
             commands::load_settings(&handle, &app_state);
             commands::load_history(&handle, &app_state);
 
             tray::setup_tray(&handle)?;
 
-            // If launched with `ears toggle`, start recording immediately
             if std::env::args().nth(1).as_deref() == Some("toggle") {
                 let app_clone = handle.clone();
                 tauri::async_runtime::spawn(async move {
@@ -62,12 +58,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
-            list_models,
-            download_model,
-            delete_model,
+            list_provider_models,
             get_status,
             get_history,
             remove_history_item,
+            clear_history,
             cmd_toggle_recording,
         ])
         .run(tauri::generate_context!())

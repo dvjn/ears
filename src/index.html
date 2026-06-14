@@ -37,6 +37,9 @@
   </div>
 
   <div id="tab-history" class="tab-panel">
+    <div class="history-toolbar">
+      <button id="clear-history-btn" class="sm danger">Clear all</button>
+    </div>
     <div id="history-list" class="history-list">
       <div class="history-empty">No history yet.</div>
     </div>
@@ -47,10 +50,34 @@
       <h3>Settings</h3>
       <div class="form-row">
         <div class="form-label-group">
-          <span class="form-label">Active model</span>
-          <span class="form-hint">Whisper model used for transcription</span>
+          <span class="form-label">Base URL</span>
+          <span class="form-hint">OpenAI-compatible API base URL</span>
         </div>
-        <select id="model-select"></select>
+        <input id="base-url-input" type="text" placeholder="https://api.openai.com/v1" style="flex:1" />
+      </div>
+      <div class="form-row">
+        <div class="form-label-group">
+          <span class="form-label">API Key</span>
+          <span class="form-hint">Your provider API key</span>
+        </div>
+        <input id="api-key-input" type="password" placeholder="sk-..." />
+      </div>
+      <div class="form-row">
+        <div class="form-label-group">
+          <span class="form-label">Model</span>
+          <span class="form-hint">Transcription model to use</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="model-select" style="flex:1"></select>
+          <button id="refresh-models-btn" class="sm" title="Fetch models from API">↻</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-label-group">
+          <span class="form-label">Stop on silence</span>
+          <span class="form-hint">Auto-stop after this many seconds of silence (0 = off)</span>
+        </div>
+        <input id="silence-stop-input" type="number" min="0" max="60" value="3" />
       </div>
       <div class="form-row">
         <div class="form-label-group">
@@ -108,14 +135,6 @@
         </div>
         <input id="history-limit-input" type="number" min="1" max="9999" value="10" />
       </div>
-      <div class="save-row">
-        <button id="save-btn">Save Settings</button>
-      </div>
-    </section>
-
-    <section>
-      <h3>Models</h3>
-      <div id="models-list"></div>
     </section>
 
     <section>
