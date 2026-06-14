@@ -29,7 +29,9 @@ jobs:
             patchelf
 
       - name: Setup toolchain (rust, node, pnpm)
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
+        with:
+          cache: true
 
       - name: Add rustfmt and clippy
         run: rustup component add rustfmt clippy
@@ -68,7 +70,9 @@ jobs:
             patchelf
 
       - name: Setup toolchain (rust, node, pnpm)
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
+        with:
+          cache: true
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
