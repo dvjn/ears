@@ -213,7 +213,7 @@ async function loadSettings() {
   baseUrlInput.value = s.base_url ?? 'https://api.openai.com/v1';
   hasStoredKey = !!s.has_api_key;
   apiKeyInput.value = '';
-  apiKeyInput.placeholder = hasStoredKey ? '•••••••• (saved — leave blank to keep)' : 'sk-…';
+  apiKeyInput.placeholder = hasStoredKey ? '••••••••' : 'sk-…';
   await fetchAndRenderModels(s.model);
   langSelect.value = s.language ?? 'auto';
   silenceStopInput.value = s.silence_stop_secs ?? 3;
@@ -263,7 +263,7 @@ async function saveSettings({ silent = false } = {}) {
     if (s.api_key) {
       hasStoredKey = true;
       apiKeyInput.value = '';
-      apiKeyInput.placeholder = '•••••••• (saved — leave blank to keep)';
+      apiKeyInput.placeholder = '••••••••';
     }
     renderRecordMeta(s);
     if (!silent) showToast('Saved');
