@@ -56,15 +56,26 @@ impl From<&Settings> for SettingsView {
 // ---- Settings persistence --------------------------------------------------
 
 pub fn load_settings(app: &AppHandle, state: &AppState) {
-    let Ok(store) = app.store(STORE_FILE) else { return };
+    let Ok(store) = app.store(STORE_FILE) else {
+        return;
+    };
     let mut settings = state.settings.lock().unwrap();
-    if let Some(v) = store.get("base_url").and_then(|v| v.as_str().map(|s| s.to_string())) {
+    if let Some(v) = store
+        .get("base_url")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+    {
         settings.base_url = v;
     }
-    if let Some(v) = store.get("api_key").and_then(|v| v.as_str().map(|s| s.to_string())) {
+    if let Some(v) = store
+        .get("api_key")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+    {
         settings.api_key = v;
     }
-    if let Some(v) = store.get("model").and_then(|v| v.as_str().map(|s| s.to_string())) {
+    if let Some(v) = store
+        .get("model")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+    {
         settings.model = v;
     }
     if let Some(v) = store.get("language") {
@@ -88,15 +99,23 @@ pub fn load_settings(app: &AppHandle, state: &AppState) {
 }
 
 pub fn load_history(app: &AppHandle, state: &AppState) {
-    let Ok(dir) = app.path().app_data_dir() else { return };
+    let Ok(dir) = app.path().app_data_dir() else {
+        return;
+    };
     let path = dir.join("history.json");
-    let Ok(data) = std::fs::read_to_string(path) else { return };
-    let Ok(history) = serde_json::from_str::<Vec<String>>(&data) else { return };
+    let Ok(data) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(history) = serde_json::from_str::<Vec<String>>(&data) else {
+        return;
+    };
     *state.history.lock().unwrap() = history;
 }
 
 fn save_history(app: &AppHandle, history: &[String]) {
-    let Ok(dir) = app.path().app_data_dir() else { return };
+    let Ok(dir) = app.path().app_data_dir() else {
+        return;
+    };
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("history.json");
     if let Ok(data) = serde_json::to_string(history) {
@@ -105,7 +124,9 @@ fn save_history(app: &AppHandle, history: &[String]) {
 }
 
 fn persist_settings(app: &AppHandle, settings: &Settings) {
-    let Ok(store) = app.store(STORE_FILE) else { return };
+    let Ok(store) = app.store(STORE_FILE) else {
+        return;
+    };
     store.set("base_url", settings.base_url.clone());
     store.set("api_key", settings.api_key.clone());
     store.set("model", settings.model.clone());
@@ -162,7 +183,11 @@ pub fn get_settings(state: State<AppState>) -> SettingsView {
 }
 
 #[tauri::command]
-pub fn save_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<(), String> {
+pub fn save_settings(
+    app: AppHandle,
+    state: State<AppState>,
+    settings: Settings,
+) -> Result<(), String> {
     let mut settings = settings;
     live::validate_base_url(&settings.base_url)?;
     {
@@ -234,7 +259,9 @@ fn show_live_overlay(app: &AppHandle) {
     let _ = app.emit("live-reset", ());
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let Some(win) = handle.get_webview_window(LIVE_LABEL) else { return };
+        let Some(win) = handle.get_webview_window(LIVE_LABEL) else {
+            return;
+        };
         let _ = win.show();
 
         // Pin to bottom-center of the current monitor (best-effort: some Wayland
@@ -346,7 +373,8 @@ async fn start_live(app: AppHandle) -> anyhow::Result<()> {
                         let max_hit = max_secs > 0
                             && start.elapsed() >= std::time::Duration::from_secs(max_secs as u64);
                         let silence_hit = silence_secs > 0
-                            && session.silent_for(std::time::Duration::from_secs(silence_secs as u64));
+                            && session
+                                .silent_for(std::time::Duration::from_secs(silence_secs as u64));
                         max_hit || silence_hit
                     }
                     _ => return, // no longer live; stop watching
@@ -427,13 +455,23 @@ async fn finalize_transcription(app: &AppHandle, text: String) {
             if let Ok(mut enigo) = Enigo::new(&EnigoSettings::default()) {
                 let _ = enigo.text(&text_to_type);
             }
-        }).await.ok();
+        })
+        .await
+        .ok();
     }
 
     if !auto_type {
         let preview: String = text.chars().take(60).collect();
-        let body = if text.chars().count() > 60 { format!("{preview}...") } else { preview };
-        let title = if auto_copy { "ears - copied" } else { "ears - transcribed" };
+        let body = if text.chars().count() > 60 {
+            format!("{preview}...")
+        } else {
+            preview
+        };
+        let title = if auto_copy {
+            "ears - copied"
+        } else {
+            "ears - transcribed"
+        };
         let _ = app.notification().builder().title(title).body(body).show();
     }
 

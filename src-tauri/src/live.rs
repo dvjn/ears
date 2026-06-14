@@ -33,8 +33,8 @@ const FRAME_MS: f32 = 30.0; // analysis frame size
 const SPEECH_ONSET_MS: f32 = 150.0; // voiced run needed to enter speech
 const UTTERANCE_GAP_MS: f32 = 600.0; // silence run that ends an utterance
 const PREROLL_MS: f32 = 200.0; // audio kept before onset so words aren't clipped
-// During continuous speech (no pause), force a chunk after this long so the
-// live transcript keeps flowing instead of waiting for a pause.
+                               // During continuous speech (no pause), force a chunk after this long so the
+                               // live transcript keeps flowing instead of waiting for a pause.
 const MAX_SEGMENT_MS: f32 = 6000.0;
 
 #[derive(Clone)]
@@ -75,7 +75,9 @@ pub fn validate_base_url(base_url: &str) -> std::result::Result<(), String> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(format!("unsupported URL scheme: {}", url.scheme()));
     }
-    let host = url.host_str().ok_or_else(|| "base URL has no host".to_string())?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "base URL has no host".to_string())?;
     if host.starts_with("169.254.") {
         return Err("base URL host is not allowed".to_string());
     }
@@ -98,8 +100,8 @@ pub enum FinalTranscript {
 
 pub struct LiveSession {
     stop: Arc<AtomicBool>,
-    committed: Arc<Mutex<String>>,        // live preview (per-utterance concatenation)
-    speech_audio: Arc<Mutex<Vec<f32>>>,   // concatenated speech at device rate
+    committed: Arc<Mutex<String>>, // live preview (per-utterance concatenation)
+    speech_audio: Arc<Mutex<Vec<f32>>>, // concatenated speech at device rate
     sample_rate: u32,
     config: ApiConfig,
     last_activity: Arc<Mutex<Instant>>,
@@ -139,7 +141,11 @@ impl LiveSession {
         // improve on them.
         let preview = || {
             if committed.is_empty() {
-                if had_speech { FinalTranscript::NoText } else { FinalTranscript::NoSpeech }
+                if had_speech {
+                    FinalTranscript::NoText
+                } else {
+                    FinalTranscript::NoSpeech
+                }
             } else {
                 FinalTranscript::Text(committed.clone())
             }
@@ -155,7 +161,9 @@ impl LiveSession {
             .await
             .ok()
             .and_then(|r| r.ok());
-        let Some(samples) = result else { return preview() };
+        let Some(samples) = result else {
+            return preview();
+        };
 
         // Bound the final pass more tightly than per-utterance requests: the UI
         // is pinned in `Transcribing` until this returns, so a slow endpoint
@@ -393,10 +401,20 @@ async fn finalize_segment(
                 c.clone()
             };
             let _ = app.emit("live-commit", CaptionPayload { text: full });
-            let _ = app.emit("live-partial", CaptionPayload { text: String::new() });
+            let _ = app.emit(
+                "live-partial",
+                CaptionPayload {
+                    text: String::new(),
+                },
+            );
         }
         Ok(_) => {
-            let _ = app.emit("live-partial", CaptionPayload { text: String::new() });
+            let _ = app.emit(
+                "live-partial",
+                CaptionPayload {
+                    text: String::new(),
+                },
+            );
         }
         Err(e) => {
             let _ = app.emit("live-error", e.to_string());

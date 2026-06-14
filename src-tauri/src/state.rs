@@ -6,9 +6,7 @@ use crate::live::LiveSession;
 
 pub enum RecordingState {
     Idle,
-    LiveRecording {
-        session: LiveSession,
-    },
+    LiveRecording { session: LiveSession },
     Transcribing,
 }
 
@@ -40,11 +38,21 @@ pub struct Settings {
     pub history_limit: usize,
 }
 
-fn default_history_limit() -> usize { 10 }
-fn default_auto_copy() -> bool { true }
-fn default_silence_stop_secs() -> u32 { 3 }
-fn default_max_duration_secs() -> u32 { 120 }
-fn default_language() -> Option<String> { Some("en".to_string()) }
+fn default_history_limit() -> usize {
+    10
+}
+fn default_auto_copy() -> bool {
+    true
+}
+fn default_silence_stop_secs() -> u32 {
+    3
+}
+fn default_max_duration_secs() -> u32 {
+    120
+}
+fn default_language() -> Option<String> {
+    Some("en".to_string())
+}
 
 impl Default for Settings {
     fn default() -> Self {

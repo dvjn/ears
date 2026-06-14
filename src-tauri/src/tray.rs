@@ -28,7 +28,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         *state.start_stop_menu_item.lock().unwrap() = Some(start_item.clone());
     }
 
-    let menu = Menu::with_items(app, &[&start_item, &open_item, &last_result_item, &sep, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[&start_item, &open_item, &last_result_item, &sep, &quit_item],
+    )?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(Image::from_bytes(include_bytes!("../icons-tray/idle.png"))?)
@@ -96,7 +99,11 @@ pub fn set_tray_recording(app: &AppHandle, recording: bool) {
     let state = app.state::<crate::state::AppState>();
     let guard = state.start_stop_menu_item.lock().unwrap();
     if let Some(item) = &*guard {
-        let label = if recording { "Stop Recording" } else { "Start Recording" };
+        let label = if recording {
+            "Stop Recording"
+        } else {
+            "Start Recording"
+        };
         let _ = item.set_text(label);
     }
 }
@@ -106,7 +113,11 @@ pub fn set_tray_last_result(app: &AppHandle, text: &str) {
     let guard = state.last_result_menu_item.lock().unwrap();
     if let Some(item) = &*guard {
         let preview: String = text.chars().take(50).collect();
-        let label = if text.chars().count() > 50 { format!("{preview}...") } else { preview };
+        let label = if text.chars().count() > 50 {
+            format!("{preview}...")
+        } else {
+            preview
+        };
         let _ = item.set_text(label);
         let _ = item.set_enabled(true);
     }
