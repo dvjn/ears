@@ -1,7 +1,9 @@
 // Live dictation over the STANDARD OpenAI-compatible /v1/audio/transcriptions
-// endpoint (no streaming/WebSocket required).
+// endpoint, with ears-stt's streaming websocket as a better live preview when
+// the provider is an ears service (see stream.rs).
 //
-// Standard Whisper has no streaming API, so "live" is faked client-side:
+// Standard Whisper has no streaming API, so without ears-stt "live" is faked
+// client-side:
 //   * capture audio continuously,
 //   * a simple energy VAD splits it at pauses into utterances,
 //   * each finished utterance is transcribed with a normal batch request and
@@ -27,6 +29,8 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
+use crate::stream::LinearResampler;
+
 const TARGET_RATE: u32 = 16000;
 
 // VAD tuning (milliseconds).
@@ -49,13 +53,15 @@ pub struct ApiConfig {
     pub base_url: String,
     pub model: String,
     pub language: Option<String>,
+    /// Try ears-stt's streaming websocket for the live preview.
+    pub stream: bool,
     /// Microphone id (see mics.rs); `None` uses the system default.
     pub input_device: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
-struct CaptionPayload {
-    text: String,
+pub struct CaptionPayload {
+    pub text: String,
 }
 
 /// Shared HTTP client for all provider requests. A request timeout is essential:
@@ -119,6 +125,7 @@ pub struct LiveSession {
     sink: Arc<Mutex<Option<UnboundedSender<Vec<f32>>>>>,
     capture_thread: Option<std::thread::JoinHandle<()>>,
     proc_task: Option<tokio::task::JoinHandle<()>>,
+    stream_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl LiveSession {
@@ -149,9 +156,13 @@ impl LiveSession {
             })
             .await;
         }
-        // Sender dropped -> proc loop drains and ends.
+        // Sender dropped -> proc loop drains and ends, which closes the
+        // stream's audio channel too.
         self.sink.lock().unwrap().take();
         if let Some(h) = self.proc_task.take() {
+            let _ = h.await;
+        }
+        if let Some(h) = self.stream_task.take() {
             let _ = h.await;
         }
 
@@ -209,6 +220,9 @@ impl Drop for LiveSession {
         self.stop.store(true, Ordering::Release);
         self.sink.lock().unwrap().take();
         if let Some(t) = self.proc_task.take() {
+            t.abort();
+        }
+        if let Some(t) = self.stream_task.take() {
             t.abort();
         }
         // The capture thread observes `stop` and exits on its own; we don't join
@@ -315,12 +329,32 @@ pub fn start_live(app: AppHandle, config: ApiConfig) -> Result<LiveSession> {
     let last_activity = Arc::new(Mutex::new(Instant::now()));
     let had_speech = Arc::new(AtomicBool::new(false));
 
+    // ears-stt live preview: a second copy of the audio goes to the websocket.
+    let streaming = Arc::new(AtomicBool::new(false));
+    let (stream_tx, stream_task) = if config.stream {
+        let (stx, srx) = unbounded_channel::<Vec<f32>>();
+        let task = tokio::spawn(crate::stream::run(
+            app.clone(),
+            config.clone(),
+            srx,
+            streaming.clone(),
+            committed.clone(),
+        ));
+        (Some(stx), Some(task))
+    } else {
+        (None, None)
+    };
+
     let proc_task = tokio::spawn(run_vad_loop(
         app,
         config.clone(),
         rx,
         sample_rate,
-        committed.clone(),
+        Preview {
+            committed: committed.clone(),
+            stream_tx,
+            streaming,
+        },
         speech_audio.clone(),
         last_activity.clone(),
         had_speech.clone(),
@@ -340,6 +374,7 @@ pub fn start_live(app: AppHandle, config: ApiConfig) -> Result<LiveSession> {
         sink,
         capture_thread: Some(capture_thread),
         proc_task: Some(proc_task),
+        stream_task,
     })
 }
 
@@ -372,17 +407,31 @@ where
     Ok(stream)
 }
 
+/// Where live-preview text comes from: the ears-stt websocket when it is
+/// connected, otherwise a batch request per utterance.
+struct Preview {
+    committed: Arc<Mutex<String>>,
+    stream_tx: Option<UnboundedSender<Vec<f32>>>,
+    streaming: Arc<AtomicBool>,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_vad_loop(
     app: AppHandle,
     config: ApiConfig,
     mut rx: UnboundedReceiver<Vec<f32>>,
     sample_rate: u32,
-    committed: Arc<Mutex<String>>,
+    preview: Preview,
     speech_audio: Arc<Mutex<Vec<f32>>>,
     last_activity: Arc<Mutex<Instant>>,
     had_speech: Arc<AtomicBool>,
 ) {
+    let Preview {
+        committed,
+        stream_tx,
+        streaming,
+    } = preview;
+    let mut resampler = LinearResampler::new(sample_rate, TARGET_RATE);
     let frame_len = ((sample_rate as f32 * FRAME_MS / 1000.0) as usize).max(1);
     let preroll = (sample_rate as f32 * PREROLL_MS / 1000.0) as usize;
 
@@ -394,6 +443,9 @@ async fn run_vad_loop(
     let mut acc: Vec<f32> = Vec::new();
 
     while let Some(chunk) = rx.recv().await {
+        if let Some(stx) = &stream_tx {
+            let _ = stx.send(resampler.process(&chunk));
+        }
         acc.extend_from_slice(&chunk);
         while acc.len() >= frame_len {
             let frame: Vec<f32> = acc.drain(..frame_len).collect();
@@ -426,8 +478,16 @@ async fn run_vad_loop(
                 } else if silence_ms >= UTTERANCE_GAP_MS {
                     in_speech = false;
                     let utt = std::mem::take(&mut seg);
-                    finalize_segment(&app, &config, sample_rate, utt, &committed, &speech_audio)
-                        .await;
+                    finalize_segment(
+                        &app,
+                        &config,
+                        sample_rate,
+                        utt,
+                        &committed,
+                        &speech_audio,
+                        &streaming,
+                    )
+                    .await;
                 }
             }
 
@@ -437,8 +497,16 @@ async fn run_vad_loop(
                 let seg_ms = seg.len() as f32 / sample_rate as f32 * 1000.0;
                 if seg_ms >= MAX_SEGMENT_MS {
                     let utt = std::mem::take(&mut seg);
-                    finalize_segment(&app, &config, sample_rate, utt, &committed, &speech_audio)
-                        .await;
+                    finalize_segment(
+                        &app,
+                        &config,
+                        sample_rate,
+                        utt,
+                        &committed,
+                        &speech_audio,
+                        &streaming,
+                    )
+                    .await;
                     // Still speaking: keep the activity cue visible.
                     let _ = app.emit("live-partial", CaptionPayload { text: "…".into() });
                 }
@@ -448,11 +516,21 @@ async fn run_vad_loop(
 
     // Channel closed (stopping): flush a trailing in-progress utterance.
     if in_speech && seg.iter().any(|s| *s != 0.0) {
-        finalize_segment(&app, &config, sample_rate, seg, &committed, &speech_audio).await;
+        finalize_segment(
+            &app,
+            &config,
+            sample_rate,
+            seg,
+            &committed,
+            &speech_audio,
+            &streaming,
+        )
+        .await;
     }
 }
 
-/// Append an utterance to the accumulated speech and transcribe it for preview.
+/// Append an utterance to the accumulated speech and, unless the streaming
+/// preview is running, transcribe it for preview.
 async fn finalize_segment(
     app: &AppHandle,
     config: &ApiConfig,
@@ -460,8 +538,12 @@ async fn finalize_segment(
     utt: Vec<f32>,
     committed: &Arc<Mutex<String>>,
     speech_audio: &Arc<Mutex<Vec<f32>>>,
+    streaming: &AtomicBool,
 ) {
     speech_audio.lock().unwrap().extend_from_slice(&utt);
+    if streaming.load(Ordering::Acquire) {
+        return;
+    }
 
     let samples = match tokio::task::spawn_blocking(move || resample_to_16k(utt, sample_rate)).await
     {

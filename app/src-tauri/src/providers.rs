@@ -12,12 +12,27 @@ pub struct ProviderStatus {
     /// One line for the UI, e.g. "ears-stt 0.2.0 · default whisper-medium.en".
     pub message: String,
     pub models: Vec<String>,
+    /// ears-stt's live transcription websocket is available.
+    pub streaming: bool,
 }
 
 /// The server root of an OpenAI-style base URL (".../v1" -> "...").
 fn root(base_url: &str) -> &str {
     let base = base_url.trim_end_matches('/');
     base.strip_suffix("/v1").unwrap_or(base)
+}
+
+/// ws(s):// URL of ears-stt's streaming endpoint for a base URL.
+pub fn stream_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    let ws = if let Some(rest) = base.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if let Some(rest) = base.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else {
+        base.to_string()
+    };
+    format!("{ws}/audio/transcriptions/stream")
 }
 
 /// Whether a model id from an OpenAI-style listing transcribes audio. Hosted
@@ -87,6 +102,7 @@ pub async fn check(
         if health["service"] != service {
             return Err(format!("not an {service} server"));
         }
+        status.streaming = health["streaming"].as_bool().unwrap_or(false);
         status.message = format!(
             "{service} {} · default {}",
             health["version"].as_str().unwrap_or("?"),
@@ -104,6 +120,18 @@ pub async fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stream_url_swaps_scheme() {
+        assert_eq!(
+            stream_url("http://localhost:13278/v1"),
+            "ws://localhost:13278/v1/audio/transcriptions/stream"
+        );
+        assert_eq!(
+            stream_url("https://gpu.example/v1/"),
+            "wss://gpu.example/v1/audio/transcriptions/stream"
+        );
+    }
 
     #[test]
     fn root_strips_v1() {

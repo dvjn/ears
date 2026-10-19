@@ -3,6 +3,7 @@ mod live;
 mod mics;
 mod providers;
 mod state;
+mod stream;
 mod tray;
 
 use commands::*;

@@ -11,7 +11,7 @@ pub enum RecordingState {
 }
 
 /// Which kind of server a provider points at. `Ears` is ears-stt (adds a
-/// health check); `Openai` is any OpenAI-compatible API.
+/// health check and streaming); `Openai` is any OpenAI-compatible API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderKind {

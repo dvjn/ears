@@ -1208,6 +1208,7 @@ dependencies = [
  "anyhow",
  "cpal",
  "enigo",
+ "futures-util",
  "reqwest",
  "rubato",
  "serde",
@@ -1219,6 +1220,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tokio",
+ "tokio-tungstenite 0.30.0",
 ]
 
 [[package]]

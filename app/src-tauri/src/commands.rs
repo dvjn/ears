@@ -308,6 +308,7 @@ fn api_config(state: &AppState) -> live::ApiConfig {
         api_key: s.stt_api_key.clone(),
         model: s.stt_model.clone(),
         language: s.language.clone(),
+        stream: s.stt_provider == ProviderKind::Ears,
         input_device: s.input_device.clone(),
     }
 }
@@ -317,7 +318,7 @@ async fn start_live(app: AppHandle) -> anyhow::Result<()> {
 
     let config = api_config(&state);
     // ears-stt on localhost may run without a key; any other provider needs one.
-    let keyless_ok = state.settings.lock().unwrap().stt_provider == ProviderKind::Ears;
+    let keyless_ok = config.stream;
     if config.api_key.is_empty() && !keyless_ok {
         *state.recording.lock().unwrap() = RecordingState::Idle;
         let _ = app.emit("error-no-api-key", ());
