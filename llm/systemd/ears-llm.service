@@ -1,0 +1,19 @@
+[Unit]
+Description=ears-llm transcript clean-up language model server
+Documentation=https://github.com/dvjn/ears
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Ready once the default model is loaded and the port is bound.
+Type=notify
+NotifyAccess=main
+EnvironmentFile=-%h/.config/ears-llm/env
+ExecStart=/usr/bin/ears-llm
+Restart=on-failure
+RestartSec=5
+# The first start downloads the default model.
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target
