@@ -28,7 +28,15 @@
           "libgtk-3-0",
           "libayatana-appindicator3-1",
           "libasound2"
-        ]
+        ],
+        "files": {
+          "/usr/lib/systemd/user/ears.service": "../systemd/ears.service"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/lib/systemd/user/ears.service": "../systemd/ears.service"
+        }
       }
     },
     "macOS": {

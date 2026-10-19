@@ -69,3 +69,42 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  servers:
+    # ears-stt and ears-llm link Arch's whisper.cpp and llama.cpp, so they are
+    # built on Arch. built-with.txt records the versions the AUR -bin
+    # packages pin.
+    needs: release
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed git git-lfs base-devel clang rustup github-cli whisper-cpp llama-cpp
+
+      - uses: actions/checkout@v4
+
+      - name: Setup rust
+        run: rustup default stable
+
+      - name: Build
+        run: cargo build --release --locked -p ears-stt -p ears-llm
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          pacman -Q whisper-cpp llama-cpp ggml > built-with.txt
+          for name in stt llm; do
+            dir="ears-$name-$version-x86_64"
+            mkdir "$dir"
+            cp "target/release/ears-$name" "$name/systemd/ears-$name.service" \
+              "$name/env.example" "$name/README.md" LICENSE built-with.txt "$dir/"
+            if [ "$name" = llm ]; then cp llm/models.toml "$dir/"; fi
+            tar -czf "$dir.tar.gz" "$dir"
+          done
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" ears-*-x86_64.tar.gz built-with.txt --repo "$GITHUB_REPOSITORY" --clobber
