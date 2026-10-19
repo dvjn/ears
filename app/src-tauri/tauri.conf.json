@@ -13,7 +13,7 @@
     "publisher": "dvjn",
     "copyright": "Copyright © 2026 dvjn",
     "shortDescription": "voice dictation app",
-    "longDescription": "a voice dictation app. press a shortcut, speak, and ears transcribes what you said using an openai-compatible api.",
+    "longDescription": "a voice dictation app. press a shortcut, speak, and ears transcribes what you said with ears-stt or any openai-compatible api, optionally cleaning it up with a language model.",
     "homepage": "https://github.com/dvjn/ears",
     "icon": [
       "icons/32x32.png",
