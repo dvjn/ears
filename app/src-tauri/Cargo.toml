@@ -21,7 +21,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 
-cpal = "0.17"
+cpal = { version = "0.18.2", features = ["pulseaudio"] }
 reqwest = { version = "0.13", features = ["multipart", "json"] }
 rubato = { version = "3.0", features = ["fft_resampler"] }
 anyhow = "1"

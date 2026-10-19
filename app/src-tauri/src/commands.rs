@@ -28,6 +28,7 @@ pub struct AppStatus {
 pub struct SettingsView {
     pub base_url: String,
     pub model: String,
+    pub input_device: Option<String>,
     pub language: Option<String>,
     pub max_duration_secs: u32,
     pub silence_stop_secs: u32,
@@ -42,6 +43,7 @@ impl From<&Settings> for SettingsView {
         SettingsView {
             base_url: s.base_url.clone(),
             model: s.model.clone(),
+            input_device: s.input_device.clone(),
             language: s.language.clone(),
             max_duration_secs: s.max_duration_secs,
             silence_stop_secs: s.silence_stop_secs,
@@ -77,6 +79,9 @@ pub fn load_settings(app: &AppHandle, state: &AppState) {
         .and_then(|v| v.as_str().map(|s| s.to_string()))
     {
         settings.model = v;
+    }
+    if let Some(v) = store.get("input_device") {
+        settings.input_device = v.as_str().map(|s| s.to_string());
     }
     if let Some(v) = store.get("language") {
         settings.language = v.as_str().map(|s| s.to_string());
@@ -130,6 +135,7 @@ fn persist_settings(app: &AppHandle, settings: &Settings) {
     store.set("base_url", settings.base_url.clone());
     store.set("api_key", settings.api_key.clone());
     store.set("model", settings.model.clone());
+    store.set("input_device", serde_json::json!(settings.input_device));
     store.set("language", serde_json::json!(settings.language));
     store.set("max_duration_secs", settings.max_duration_secs);
     store.set("silence_stop_secs", settings.silence_stop_secs);
@@ -175,6 +181,13 @@ pub async fn list_provider_models(
         .collect();
     models.sort();
     Ok(models)
+}
+
+#[tauri::command]
+pub async fn list_input_devices() -> Vec<crate::mics::Mic> {
+    tokio::task::spawn_blocking(crate::mics::list)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -327,6 +340,7 @@ fn api_config(state: &AppState) -> live::ApiConfig {
         api_key: s.api_key.clone(),
         model: s.model.clone(),
         language: s.language.clone(),
+        input_device: s.input_device.clone(),
     }
 }
 
@@ -343,52 +357,95 @@ async fn start_live(app: AppHandle) -> anyhow::Result<()> {
     let session = match live::start_live(app.clone(), config) {
         Ok(s) => s,
         Err(e) => {
+            eprintln!("[live] opening the microphone failed: {e}");
             *state.recording.lock().unwrap() = RecordingState::Idle;
-            let _ = app.emit("transcription-error", format!("Live start failed: {e}"));
-            return Err(e);
+            ask_for_mic(&app, &format!("Couldn't open the microphone: {e}"));
+            return Ok(());
         }
     };
+    let id = session.id();
     let (max_secs, silence_secs) = {
         let s = state.settings.lock().unwrap();
         (s.max_duration_secs, s.silence_stop_secs)
     };
 
-    *state.recording.lock().unwrap() = RecordingState::LiveRecording { session };
+    *state.recording.lock().unwrap() = RecordingState::LiveRecording {
+        session: Box::new(session),
+    };
 
     show_live_overlay(&app);
     set_tray_recording(&app, true);
     let _ = app.emit("recording-state-changed", "recording");
 
-    // Watcher: auto-stop on max duration or on a stretch of silence.
+    // Watcher: auto-stop on max duration or on a stretch of silence, and hand
+    // a microphone that never sent audio back to the user.
     let app_clone = app.clone();
     tokio::spawn(async move {
+        enum Check {
+            Continue,
+            Stop,
+            MicFailed,
+        }
         let start = std::time::Instant::now();
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             let s = app_clone.state::<AppState>();
-            let should_stop = {
-                let guard = s.recording.lock().unwrap();
-                match &*guard {
-                    RecordingState::LiveRecording { session } => {
-                        let max_hit = max_secs > 0
-                            && start.elapsed() >= std::time::Duration::from_secs(max_secs as u64);
-                        let silence_hit = silence_secs > 0
-                            && session
-                                .silent_for(std::time::Duration::from_secs(silence_secs as u64));
-                        max_hit || silence_hit
-                    }
-                    _ => return, // no longer live; stop watching
+            let check = {
+                let mut guard = s.recording.lock().unwrap();
+                let RecordingState::LiveRecording { session } = &*guard else {
+                    return; // no longer live; stop watching
+                };
+                if session.id() != id {
+                    return; // a newer recording has its own watcher
+                }
+                if session.mic_failed() {
+                    *guard = RecordingState::Idle;
+                    Check::MicFailed
+                } else if (max_secs > 0
+                    && start.elapsed() >= std::time::Duration::from_secs(max_secs as u64))
+                    || (silence_secs > 0
+                        && session.silent_for(std::time::Duration::from_secs(silence_secs as u64)))
+                {
+                    Check::Stop
+                } else {
+                    Check::Continue
                 }
             };
-            if should_stop {
-                if let Err(e) = do_stop_live(app_clone).await {
-                    eprintln!("live auto-stop error: {e}");
+            match check {
+                Check::Continue => {}
+                Check::Stop => {
+                    if let Err(e) = do_stop_live(app_clone).await {
+                        eprintln!("live auto-stop error: {e}");
+                    }
+                    return;
                 }
-                return;
+                Check::MicFailed => {
+                    ask_for_mic(
+                        &app_clone,
+                        "No audio from the microphone. Reconnect it or pick another one.",
+                    );
+                    return;
+                }
             }
         }
     });
     Ok(())
+}
+
+/// The microphone failed: end any recording UI and open the main window with
+/// a microphone picker so the user can switch and try again.
+fn ask_for_mic(app: &AppHandle, message: &str) {
+    hide_live_overlay(app);
+    set_tray_recording(app, false);
+    let _ = app.emit("recording-state-changed", "idle");
+    let _ = app.emit("mic-failed", message);
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(win) = handle.get_webview_window("main") {
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+    });
 }
 
 async fn do_stop_live(app: AppHandle) -> anyhow::Result<()> {
@@ -409,7 +466,7 @@ async fn do_stop_live(app: AppHandle) -> anyhow::Result<()> {
     let _ = app.emit("recording-state-changed", "transcribing");
 
     // Finish any pending utterances and collect the final transcript.
-    let result = session.shutdown().await;
+    let result = (*session).shutdown().await;
     hide_live_overlay(&app);
 
     let text = match result {

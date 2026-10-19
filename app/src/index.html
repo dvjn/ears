@@ -73,6 +73,16 @@
       </div>
       <div class="form-row">
         <div class="form-label-group">
+          <span class="form-label">Microphone</span>
+          <span class="form-hint">Input device to record from</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="input-device-select" style="flex:1;max-width:200px"></select>
+          <button id="devices-refresh-btn" class="sm" title="Refresh devices">↻</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-label-group">
           <span class="form-label">Stop on silence</span>
           <span class="form-hint">Auto-stop after this many seconds of silence (0 = off)</span>
         </div>

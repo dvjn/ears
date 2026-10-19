@@ -14,17 +14,18 @@
 // this works even against vanilla OpenAI with no server-side VAD.
 
 use anyhow::{anyhow, Result};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
+use cpal::{FromSample, SampleFormat, SizedSample};
 use reqwest::multipart;
 use rubato::{audioadapter_buffers::direct::InterleavedSlice, Fft, FixedSync, Resampler};
 use serde::Serialize;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex, OnceLock,
 };
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 const TARGET_RATE: u32 = 16000;
 
@@ -37,12 +38,19 @@ const PREROLL_MS: f32 = 200.0; // audio kept before onset so words aren't clippe
                                // live transcript keeps flowing instead of waiting for a pause.
 const MAX_SEGMENT_MS: f32 = 6000.0;
 
+// A microphone that sends no audio (no callbacks, or only zeros) for MIC_WAIT
+// after opening is reopened, up to MIC_RETRIES times, before giving up.
+const MIC_WAIT: Duration = Duration::from_secs(2);
+const MIC_RETRIES: u32 = 3;
+
 #[derive(Clone)]
 pub struct ApiConfig {
     pub api_key: String,
     pub base_url: String,
     pub model: String,
     pub language: Option<String>,
+    /// Microphone id (see mics.rs); `None` uses the system default.
+    pub input_device: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -99,6 +107,7 @@ pub enum FinalTranscript {
 }
 
 pub struct LiveSession {
+    id: u64,
     stop: Arc<AtomicBool>,
     committed: Arc<Mutex<String>>, // live preview (per-utterance concatenation)
     speech_audio: Arc<Mutex<Vec<f32>>>, // concatenated speech at device rate
@@ -106,6 +115,8 @@ pub struct LiveSession {
     config: ApiConfig,
     last_activity: Arc<Mutex<Instant>>,
     had_speech: Arc<AtomicBool>,
+    mic_failed: Arc<AtomicBool>,
+    sink: Arc<Mutex<Option<UnboundedSender<Vec<f32>>>>>,
     capture_thread: Option<std::thread::JoinHandle<()>>,
     proc_task: Option<tokio::task::JoinHandle<()>>,
 }
@@ -118,6 +129,16 @@ impl LiveSession {
             && self.last_activity.lock().unwrap().elapsed() >= timeout
     }
 
+    /// Unique per session, so a watcher can tell its session from a newer one.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// True once the microphone stayed silent through every reopen.
+    pub fn mic_failed(&self) -> bool {
+        self.mic_failed.load(Ordering::Acquire)
+    }
+
     /// Stop capture, finish pending utterances, then re-transcribe the full
     /// speech in one pass and return the most accurate final transcript.
     pub async fn shutdown(mut self) -> FinalTranscript {
@@ -128,7 +149,8 @@ impl LiveSession {
             })
             .await;
         }
-        // Capture thread gone -> sender dropped -> proc loop drains and ends.
+        // Sender dropped -> proc loop drains and ends.
+        self.sink.lock().unwrap().take();
         if let Some(h) = self.proc_task.take() {
             let _ = h.await;
         }
@@ -185,6 +207,7 @@ impl Drop for LiveSession {
     /// holding the input stream.
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        self.sink.lock().unwrap().take();
         if let Some(t) = self.proc_task.take() {
             t.abort();
         }
@@ -194,72 +217,95 @@ impl Drop for LiveSession {
 }
 
 pub fn start_live(app: AppHandle, config: ApiConfig) -> Result<LiveSession> {
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| anyhow!("no input device available"))?;
+    let device = crate::mics::open(config.input_device.as_deref())?;
     let dev_config = device.default_input_config()?;
-    let sample_rate = dev_config.sample_rate();
-    let channels = dev_config.channels() as usize;
-    let sample_format = dev_config.sample_format();
-    let stream_config: cpal::StreamConfig = dev_config.into();
+    let stream_config = dev_config.config();
+    let sample_rate = stream_config.sample_rate;
+    let channels = stream_config.channels as usize;
+    // Record f32 when the device offers it at this layout (a pulse source
+    // always does), else in the device's own format.
+    let f32_ok = device.supported_input_configs()?.any(|r| {
+        r.sample_format() == SampleFormat::F32
+            && r.channels() == stream_config.channels
+            && (r.min_sample_rate()..=r.max_sample_rate()).contains(&sample_rate)
+    });
+    let sample_format = if f32_ok {
+        SampleFormat::F32
+    } else {
+        dev_config.sample_format()
+    };
 
     let stop = Arc::new(AtomicBool::new(false));
+    let mic_failed = Arc::new(AtomicBool::new(false));
     let (tx, rx) = unbounded_channel::<Vec<f32>>();
 
-    // Audio capture thread: pushes mono f32 chunks (at device rate) to the channel.
+    // Audio capture thread: pushes mono f32 chunks (at device rate) to the
+    // channel, reopening a microphone that sends no audio.
     let stop_capture = stop.clone();
+    let mic_failed_capture = mic_failed.clone();
+    // Callbacks reach the VAD loop through this slot. Stopping empties it,
+    // which ends the loop even if a stream is stuck inside the audio backend
+    // and never gets dropped.
+    let sink = Arc::new(Mutex::new(Some(tx)));
+    let capture_sink = sink.clone();
     let capture_thread = std::thread::spawn(move || {
-        let build = || -> Result<cpal::Stream> {
-            match sample_format {
-                cpal::SampleFormat::F32 => {
-                    let tx = tx.clone();
-                    Ok(device.build_input_stream(
-                        &stream_config,
-                        move |data: &[f32], _: &_| {
-                            let mut mono = Vec::with_capacity(data.len() / channels);
-                            for frame in data.chunks(channels) {
-                                mono.push(frame.iter().sum::<f32>() / channels as f32);
-                            }
-                            let _ = tx.send(mono);
-                        },
-                        |err| eprintln!("live audio stream error: {err}"),
-                        None,
-                    )?)
+        let heard = Arc::new(AtomicBool::new(false));
+        let send = {
+            let heard = heard.clone();
+            move |mono: Vec<f32>| {
+                if mono.iter().any(|s| *s != 0.0) {
+                    heard.store(true, Ordering::Release);
                 }
-                cpal::SampleFormat::I16 => {
-                    let tx = tx.clone();
-                    Ok(device.build_input_stream(
-                        &stream_config,
-                        move |data: &[i16], _: &_| {
-                            let mut mono = Vec::with_capacity(data.len() / channels);
-                            for frame in data.chunks(channels) {
-                                let s = frame.iter().map(|s| *s as f32 / 32768.0).sum::<f32>()
-                                    / channels as f32;
-                                mono.push(s);
-                            }
-                            let _ = tx.send(mono);
-                        },
-                        |err| eprintln!("live audio stream error: {err}"),
-                        None,
-                    )?)
+                if let Some(tx) = &*capture_sink.lock().unwrap() {
+                    let _ = tx.send(mono);
                 }
-                fmt => Err(anyhow!("unsupported sample format: {fmt:?}")),
             }
         };
-
-        match build() {
-            Ok(stream) => {
-                if let Err(e) = stream.play() {
-                    eprintln!("failed to start live stream: {e}");
-                    return;
-                }
-                while !stop_capture.load(Ordering::Acquire) {
+        // Each attempt owns its stream on its own thread until `close` is
+        // set. Opening can block (on PulseAudio, play() waits for the first
+        // audio), so the loop below never waits on a device directly.
+        let open = |close: Arc<AtomicBool>| {
+            let device = device.clone();
+            let send = send.clone();
+            std::thread::spawn(move || {
+                let stream = match sample_format {
+                    SampleFormat::F32 => build::<f32>(&device, stream_config, send),
+                    SampleFormat::I16 => build::<i16>(&device, stream_config, send),
+                    SampleFormat::I32 => build::<i32>(&device, stream_config, send),
+                    fmt => Err(anyhow!("unsupported sample format: {fmt}")),
+                };
+                let stream = match stream.and_then(|s| s.play().map(|_| s).map_err(Into::into)) {
+                    Ok(s) => s,
+                    Err(e) => return eprintln!("[live] opening the microphone failed: {e}"),
+                };
+                while !close.load(Ordering::Acquire) {
                     std::thread::sleep(Duration::from_millis(20));
                 }
+                drop(stream);
+            });
+        };
+
+        for attempt in 0..=MIC_RETRIES {
+            if attempt > 0 {
+                eprintln!(
+                    "[live] no audio from the microphone, reopening it ({attempt}/{MIC_RETRIES})"
+                );
             }
-            Err(e) => eprintln!("failed to build live audio stream: {e}"),
+            let close = Arc::new(AtomicBool::new(false));
+            open(close.clone());
+            let opened = Instant::now();
+            while !stop_capture.load(Ordering::Acquire)
+                && (heard.load(Ordering::Acquire) || opened.elapsed() < MIC_WAIT)
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            close.store(true, Ordering::Release);
+            if stop_capture.load(Ordering::Acquire) {
+                return;
+            }
         }
+        eprintln!("[live] still no audio from the microphone, giving up");
+        mic_failed_capture.store(true, Ordering::Release);
     });
 
     eprintln!("[live] capture started: device_rate={sample_rate} channels={channels}");
@@ -280,7 +326,9 @@ pub fn start_live(app: AppHandle, config: ApiConfig) -> Result<LiveSession> {
         had_speech.clone(),
     ));
 
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
     Ok(LiveSession {
+        id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
         stop,
         committed,
         speech_audio,
@@ -288,9 +336,40 @@ pub fn start_live(app: AppHandle, config: ApiConfig) -> Result<LiveSession> {
         config,
         last_activity,
         had_speech,
+        mic_failed,
+        sink,
         capture_thread: Some(capture_thread),
         proc_task: Some(proc_task),
     })
+}
+
+/// An input stream that hands `send` mono f32 chunks, whatever the device's
+/// sample type and channel count.
+fn build<T>(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    send: impl Fn(Vec<f32>) + Send + 'static,
+) -> Result<cpal::Stream>
+where
+    T: SizedSample,
+    f32: FromSample<T>,
+{
+    let channels = config.channels as usize;
+    let stream = device.build_input_stream(
+        config,
+        move |data: &[T], _: &_| {
+            let mono = data
+                .chunks(channels)
+                .map(|frame| {
+                    frame.iter().map(|s| s.to_sample::<f32>()).sum::<f32>() / channels as f32
+                })
+                .collect();
+            send(mono);
+        },
+        |err| eprintln!("live audio stream error: {err}"),
+        None,
+    )?;
+    Ok(stream)
 }
 
 #[allow(clippy::too_many_arguments)]

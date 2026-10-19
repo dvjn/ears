@@ -25,6 +25,8 @@ const apiKeyInput         = document.getElementById('api-key-input');
 const modelSelect         = document.getElementById('model-select');
 const refreshModelsBtn    = document.getElementById('refresh-models-btn');
 const langSelect          = document.getElementById('language-select');
+const deviceSelect        = document.getElementById('input-device-select');
+const devicesRefreshBtn   = document.getElementById('devices-refresh-btn');
 const silenceStopInput  = document.getElementById('silence-stop-input');
 const maxDurInput       = document.getElementById('max-duration-input');
 const autoCopyInput     = document.getElementById('auto-copy-input');
@@ -201,6 +203,29 @@ clearHistoryBtn.onclick = async () => {
 
 refreshModelsBtn.onclick = () => fetchAndRenderModels(modelSelect.value);
 
+async function loadDevices(saved) {
+  devicesRefreshBtn.disabled = true;
+  try {
+    // [{id, label}], empty when only the system default can be offered.
+    const mics = await invoke('list_input_devices');
+    const options = [['', 'System default'], ...mics.map(m => [m.id, m.label])];
+    if (saved && !mics.some(m => m.id === saved)) {
+      options.push([saved, 'Saved microphone (not connected)']);
+    }
+    deviceSelect.replaceChildren(...options.map(([value, label]) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      return opt;
+    }));
+    deviceSelect.value = saved ?? '';
+  } catch (e) {
+    showToast(`Devices: ${e}`);
+  } finally {
+    devicesRefreshBtn.disabled = false;
+  }
+}
+
 // Settings
 //
 // The backend never sends the saved API key to the renderer (it reports only
@@ -214,7 +239,7 @@ async function loadSettings() {
   hasStoredKey = !!s.has_api_key;
   apiKeyInput.value = '';
   apiKeyInput.placeholder = hasStoredKey ? '••••••••' : 'sk-…';
-  await fetchAndRenderModels(s.model);
+  await Promise.all([fetchAndRenderModels(s.model), loadDevices(s.input_device)]);
   langSelect.value = s.language ?? 'auto';
   silenceStopInput.value = s.silence_stop_secs ?? 3;
   maxDurInput.value = s.max_duration_secs;
@@ -228,6 +253,7 @@ function collectSettings() {
     base_url: baseUrlInput.value.trim() || 'https://api.openai.com/v1',
     api_key: apiKeyInput.value.trim(),
     model: modelSelect.value,
+    input_device: deviceSelect.value || null,
     language: langSelect.value === 'auto' ? null : langSelect.value,
     silence_stop_secs: Math.max(0, Math.min(60, parseInt(silenceStopInput.value, 10) || 0)),
     max_duration_secs: parseInt(maxDurInput.value, 10) || 120,
@@ -264,7 +290,9 @@ async function onConnectionChange() {
 
 baseUrlInput.addEventListener('change', onConnectionChange);
 apiKeyInput.addEventListener('change', onConnectionChange);
-[modelSelect, langSelect, silenceStopInput, autoCopyInput, autoTypeInput, maxDurInput, historyLimitInput]
+devicesRefreshBtn.onclick = () => loadDevices(deviceSelect.value || null);
+
+[modelSelect, deviceSelect, langSelect, silenceStopInput, autoCopyInput, autoTypeInput, maxDurInput, historyLimitInput]
   .forEach(el => el.addEventListener('change', saveSettings));
 
 // Buttons
@@ -320,6 +348,16 @@ listen('live-commit', (e) => { liveCommitted = e.payload?.text ?? ''; renderLive
 listen('live-partial', (e) => { livePartial = e.payload?.text ?? ''; renderLivePreview(); });
 listen('live-reset', () => { resetLivePreview(); });
 listen('live-error', (e) => showToast(`Live: ${e.payload}`));
+
+// The microphone wouldn't open or sent no audio even after ears reopened it:
+// say so and put the user at the microphone picker.
+listen('mic-failed', async (e) => {
+  showToast(e.payload);
+  document.querySelector('.tab-btn[data-tab="settings"]').click();
+  await loadDevices(deviceSelect.value || null);
+  deviceSelect.scrollIntoView({ block: 'center' });
+  deviceSelect.focus();
+});
 
 // Init
 (async () => {

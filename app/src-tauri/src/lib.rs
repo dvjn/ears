@@ -1,5 +1,6 @@
 mod commands;
 mod live;
+mod mics;
 mod state;
 mod tray;
 
@@ -59,6 +60,7 @@ pub fn run() {
             get_settings,
             save_settings,
             list_provider_models,
+            list_input_devices,
             get_status,
             get_history,
             remove_history_item,

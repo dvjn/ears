@@ -6,7 +6,7 @@ use crate::live::LiveSession;
 
 pub enum RecordingState {
     Idle,
-    LiveRecording { session: LiveSession },
+    LiveRecording { session: Box<LiveSession> },
     Transcribing,
 }
 
@@ -22,6 +22,9 @@ pub struct Settings {
     pub api_key: String,
     #[serde(default)]
     pub model: String,
+    /// Microphone id (see mics.rs); `None` uses the system default.
+    #[serde(default)]
+    pub input_device: Option<String>,
     #[serde(default = "default_language")]
     pub language: Option<String>,
     #[serde(default = "default_max_duration_secs")]
@@ -60,6 +63,7 @@ impl Default for Settings {
             base_url: default_base_url(),
             api_key: String::new(),
             model: String::new(),
+            input_device: None,
             language: Some("en".to_string()),
             max_duration_secs: 120,
             silence_stop_secs: 3,
