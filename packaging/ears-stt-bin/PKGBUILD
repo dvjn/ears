@@ -1,6 +1,6 @@
 # Maintainer: dvjn <git@dvjn.dev>
 pkgname=ears-stt-bin
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="OpenAI-compatible speech-to-text server for ears, backed by whisper.cpp"
 arch=('x86_64')
