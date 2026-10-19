@@ -221,22 +221,6 @@ async function loadSettings() {
   autoCopyInput.checked = s.auto_copy ?? true;
   autoTypeInput.checked = s.auto_type ?? false;
   historyLimitInput.value = s.history_limit ?? 10;
-  renderRecordMeta(s);
-}
-
-function renderRecordMeta(s) {
-  const meta = document.getElementById('record-meta');
-  const langOption = langSelect.querySelector(`option[value="${s.language ?? 'auto'}"]`);
-  const langLabel = langOption ? langOption.textContent : (s.language ?? 'Auto-detect');
-  const chips = [s.model || '—', langLabel];
-  // Build chips with textContent — model ids come verbatim from the provider's
-  // /models response and must never be interpolated into innerHTML.
-  meta.replaceChildren(...chips.map(c => {
-    const span = document.createElement('span');
-    span.className = 'meta-chip';
-    span.textContent = c;
-    return span;
-  }));
 }
 
 function collectSettings() {
@@ -265,7 +249,6 @@ async function saveSettings({ silent = false } = {}) {
       apiKeyInput.value = '';
       apiKeyInput.placeholder = '••••••••';
     }
-    renderRecordMeta(s);
     if (!silent) showToast('Saved');
   } catch (e) {
     showToast(`Error: ${e}`);

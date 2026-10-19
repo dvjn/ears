@@ -108,22 +108,6 @@ section {
 
 /* ---- Record tab ---- */
 
-.record-meta {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
-.meta-chip {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  color: var(--text-dim);
-  font-size: 11px;
-  padding: 2px 9px;
-}
-
 .record-area {
   display: flex;
   justify-content: center;
