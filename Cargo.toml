@@ -1,5 +1,5 @@
 [workspace]
-members = ["app/src-tauri"]
+members = ["app/src-tauri", "stt"]
 resolver = "3"
 
 [profile.release]

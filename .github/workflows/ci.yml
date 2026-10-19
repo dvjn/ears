@@ -81,3 +81,23 @@ jobs:
 
       - name: cargo check
         run: cargo check --manifest-path app/src-tauri/Cargo.toml --all-targets
+
+  servers:
+    # ears-stt links the system whisper.cpp, which Arch packages with
+    # pkg-config metadata.
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed git git-lfs base-devel clang rustup whisper-cpp
+
+      - uses: actions/checkout@v4
+
+      - name: Setup rust
+        run: rustup default stable && rustup component add clippy
+
+      - name: clippy
+        run: cargo clippy -p ears-stt --all-targets -- -D warnings
+
+      - name: test
+        run: cargo test -p ears-stt
