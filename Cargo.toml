@@ -6,3 +6,10 @@ resolver = "3"
 strip = true
 opt-level = 3
 lto = true
+
+# OCR is unusably slow unoptimized; keep it fast in debug builds too.
+[profile.dev.package.rten]
+opt-level = 3
+
+[profile.dev.package.ocrs]
+opt-level = 3

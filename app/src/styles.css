@@ -272,7 +272,21 @@ select {
   padding-right: 24px;
 }
 
-input:not([type="checkbox"]):focus, select:focus { border-color: var(--accent); }
+input:not([type="checkbox"]):focus, select:focus, textarea:focus { border-color: var(--accent); }
+
+textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 8px;
+  width: 100%;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  color-scheme: dark;
+}
 select option { background: #1a1a1a; color: #e0e0e0; }
 
 .toggle {
@@ -374,3 +388,5 @@ button.sm { font-size: 11px; padding: 2px 7px; }
 }
 
 .toast.show { transform: translateX(-50%) translateY(0); }
+
+.toggle:has(input:disabled), textarea:disabled, select:disabled { opacity: 0.4; cursor: not-allowed; }

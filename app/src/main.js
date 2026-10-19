@@ -28,6 +28,11 @@ const maxDurInput       = document.getElementById('max-duration-input');
 const autoCopyInput     = document.getElementById('auto-copy-input');
 const autoTypeInput     = document.getElementById('auto-type-input');
 const historyLimitInput = document.getElementById('history-limit-input');
+const llmOptions        = document.getElementById('llm-options');
+const llmModelHint      = document.getElementById('llm-model-hint');
+const ppScreenshotInput = document.getElementById('postprocess-screenshot-input');
+const captureSelect     = document.getElementById('screenshot-method-select');
+const ppPromptInput     = document.getElementById('postprocess-prompt-input');
 const toast             = document.getElementById('toast');
 
 // Toast
@@ -160,12 +165,15 @@ clearHistoryBtn.onclick = async () => {
 
 // Providers
 //
-// Transcription ("stt") has a provider: ears-stt or any OpenAI-compatible
-// API. The backend never sends saved API keys to the renderer (it reports only
-// `has_*_api_key`); key fields stay blank with a placeholder when a key is
-// stored, and an empty field on save means "keep the key".
+// Transcription ("stt") and post-processing ("llm") each have a provider: an
+// ears service (ears-stt / ears-llm) or any OpenAI-compatible API, and
+// post-processing can also be off. The backend never sends saved API keys to
+// the renderer (it reports only `has_*_api_key`); key fields stay blank with a
+// placeholder when a key is stored, and an empty field on save means "keep
+// the key".
 const PRESET_URLS = {
   stt: { ears: 'http://localhost:13278/v1', openai: 'https://api.openai.com/v1' },
+  llm: { ears: 'http://localhost:13279/v1', openai: 'https://api.openai.com/v1' },
 };
 
 function providerUi(role) {
@@ -177,9 +185,11 @@ function providerUi(role) {
     model: document.getElementById(`${role}-model-select`),
     refresh: document.getElementById(`${role}-refresh-btn`),
     hasKey: false,
+    cleanupModels: [],
   };
 }
 const stt = providerUi('stt');
+const llm = providerUi('llm');
 
 function renderKeyPlaceholder(ui) {
   ui.key.value = '';
@@ -194,19 +204,23 @@ async function refreshProvider(ui, savedModel) {
   ui.refresh.textContent = '…';
   try {
     const status = await invoke('check_provider', {
+      role: ui.role,
       kind: ui.provider.value,
       baseUrl: ui.url.value.trim(),
       apiKey: ui.key.value.trim(),
     });
+    ui.cleanupModels = status.cleanup_models;
     ui.model.replaceChildren(...status.models.map(m => {
       const opt = document.createElement('option');
       opt.value = m;
-      opt.textContent = m;
+      opt.textContent = ui.cleanupModels.includes(m) ? `${m} (dictation only)` : m;
       return opt;
     }));
     const keep = savedModel && status.models.includes(savedModel);
-    // Fresh pick: ears-stt's default whisper.
-    ui.model.value = keep ? savedModel : (status.models.find(m => m.includes('medium.en')) ?? status.models[0] ?? '');
+    // Fresh pick: ears-stt's default whisper for transcription, ears-llm's
+    // default model for post-processing.
+    const preferred = ui.role === 'stt' ? 'medium.en' : 'granite-4.2-3b';
+    ui.model.value = keep ? savedModel : (status.models.find(m => m.includes(preferred)) ?? status.models[0] ?? '');
     return true;
   } catch (e) {
     // Keep the saved model selectable so a server that's down doesn't wipe it.
@@ -217,12 +231,24 @@ async function refreshProvider(ui, savedModel) {
       opt.textContent = savedModel;
       ui.model.appendChild(opt);
     }
-    showToast(`Transcription: ${e}`);
+    showToast(`${ui.role === 'stt' ? 'Transcription' : 'Post-processing'}: ${e}`);
     return false;
   } finally {
     ui.refresh.disabled = false;
     ui.refresh.textContent = '↻';
+    updateCleanupControls();
   }
+}
+
+function updateCleanupControls() {
+  llmOptions.hidden = llm.provider.value === 'off';
+  const tuned = llm.cleanupModels.includes(llm.model.value);
+  llmModelHint.textContent = tuned
+    ? 'Trained only to fix dictation: uses its own prompt, no screenshot'
+    : 'Language model that fixes the transcript';
+  ppScreenshotInput.disabled = tuned;
+  captureSelect.disabled = tuned || !ppScreenshotInput.checked;
+  ppPromptInput.disabled = tuned;
 }
 
 async function loadDevices(saved) {
@@ -252,7 +278,7 @@ async function loadDevices(saved) {
 
 async function loadSettings() {
   const s = await invoke('get_settings');
-  for (const [ui, prefix] of [[stt, 'stt']]) {
+  for (const [ui, prefix] of [[stt, 'stt'], [llm, 'llm']]) {
     ui.provider.value = s[`${prefix}_provider`];
     ui.url.value = s[`${prefix}_base_url`];
     ui.hasKey = !!s[`has_${prefix}_api_key`];
@@ -264,8 +290,13 @@ async function loadSettings() {
   autoCopyInput.checked = s.auto_copy ?? true;
   autoTypeInput.checked = s.auto_type ?? false;
   historyLimitInput.value = s.history_limit ?? 10;
+  ppScreenshotInput.checked = s.postprocess_use_screenshot ?? false;
+  captureSelect.value = s.screenshot_method ?? 'auto';
+  ppPromptInput.value = s.postprocess_prompt ?? '';
+  updateCleanupControls();
   await Promise.all([
     refreshProvider(stt, s.stt_model),
+    refreshProvider(llm, s.llm_model),
     loadDevices(s.input_device),
   ]);
 }
@@ -276,6 +307,13 @@ function collectSettings() {
     stt_base_url: stt.url.value.trim(),
     stt_api_key: stt.key.value.trim(),
     stt_model: stt.model.value,
+    llm_provider: llm.provider.value,
+    llm_base_url: llm.url.value.trim(),
+    llm_api_key: llm.key.value.trim(),
+    llm_model: llm.model.value,
+    postprocess_use_screenshot: ppScreenshotInput.checked,
+    screenshot_method: captureSelect.value,
+    postprocess_prompt: ppPromptInput.value.trim(),
     input_device: deviceSelect.value || null,
     language: langSelect.value === 'auto' ? null : langSelect.value,
     silence_stop_secs: Math.max(0, Math.min(60, parseInt(silenceStopInput.value, 10) || 0)),
@@ -292,7 +330,7 @@ async function saveSettings({ silent = false } = {}) {
   try {
     await invoke('save_settings', { settings: s });
     // A newly typed key is now stored; clear the field so it isn't resent.
-    for (const ui of [stt]) {
+    for (const ui of [stt, llm]) {
       if (ui.key.value.trim()) {
         ui.hasKey = true;
         renderKeyPlaceholder(ui);
@@ -304,7 +342,7 @@ async function saveSettings({ silent = false } = {}) {
   }
 }
 
-for (const ui of [stt]) {
+for (const ui of [stt, llm]) {
   // Switching provider swaps in that provider's usual URL, unless the user
   // has typed a custom one.
   ui.provider.addEventListener('change', async () => {
@@ -314,6 +352,7 @@ for (const ui of [stt]) {
       ui.url.value = preset;
     }
     renderKeyPlaceholder(ui);
+    updateCleanupControls();
     const ok = await refreshProvider(ui, ui.model.value);
     await saveSettings({ silent: !ok });
   });
@@ -324,14 +363,22 @@ for (const ui of [stt]) {
   ui.url.addEventListener('change', onConnectionChange);
   ui.key.addEventListener('change', onConnectionChange);
   ui.refresh.onclick = () => refreshProvider(ui, ui.model.value);
-  ui.model.addEventListener('change', saveSettings);
+  ui.model.addEventListener('change', () => {
+    updateCleanupControls();
+    saveSettings();
+  });
 }
 
 devicesRefreshBtn.onclick = () => loadDevices(deviceSelect.value || null);
 
 [deviceSelect, langSelect, silenceStopInput, autoCopyInput, autoTypeInput, maxDurInput,
- historyLimitInput]
+ historyLimitInput, captureSelect, ppPromptInput]
   .forEach(el => el.addEventListener('change', saveSettings));
+
+ppScreenshotInput.addEventListener('change', () => {
+  updateCleanupControls();
+  saveSettings();
+});
 
 // Buttons
 recordBtn.onclick = async () => {

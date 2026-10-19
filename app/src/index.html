@@ -157,6 +157,75 @@
     </section>
 
     <section>
+      <h3>Post-processing</h3>
+      <div class="form-row">
+        <div class="form-label-group">
+          <span class="form-label">Provider</span>
+          <span class="form-hint">Fix the transcript before it is typed or copied</span>
+        </div>
+        <select id="llm-provider-select">
+          <option value="off">Off</option>
+          <option value="ears">ears-llm</option>
+          <option value="openai">OpenAI-compatible</option>
+        </select>
+      </div>
+      <div id="llm-options" hidden>
+        <div class="form-row">
+          <div class="form-label-group">
+            <span class="form-label">Base URL</span>
+            <span class="form-hint">OpenAI-compatible API base URL</span>
+          </div>
+          <input id="llm-url-input" type="text" style="flex:1" />
+        </div>
+        <div class="form-row">
+          <div class="form-label-group">
+            <span class="form-label">API Key</span>
+            <span class="form-hint">Your provider API key</span>
+          </div>
+          <input id="llm-key-input" type="password" />
+        </div>
+        <div class="form-row">
+          <div class="form-label-group">
+            <span class="form-label">Model</span>
+            <span class="form-hint"><span id="llm-model-hint">Language model that fixes the transcript</span></span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <select id="llm-model-select" style="flex:1"></select>
+            <button id="llm-refresh-btn" class="sm" title="Fetch models from API">↻</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-label-group">
+            <span class="form-label">Use screenshot</span>
+            <span class="form-hint">Read the screen so names and jargon are spelled right</span>
+          </div>
+          <label class="toggle">
+            <input id="postprocess-screenshot-input" type="checkbox" />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+        <div class="form-row">
+          <div class="form-label-group">
+            <span class="form-label">Screen capture</span>
+            <span class="form-hint">How the screenshot is taken</span>
+          </div>
+          <select id="screenshot-method-select">
+            <option value="auto">Auto</option>
+            <option value="portal">Desktop portal</option>
+            <option value="grim">grim</option>
+          </select>
+        </div>
+        <div class="form-row" style="flex-direction:column;align-items:stretch;gap:6px;">
+          <div class="form-label-group">
+            <span class="form-label">System prompt</span>
+            <span class="form-hint">How the transcript is cleaned up</span>
+          </div>
+          <textarea id="postprocess-prompt-input" rows="5"></textarea>
+        </div>
+        </div>
+    </section>
+
+    <section>
       <h3>CLI Trigger</h3>
       <div style="color:var(--text-dim); font-size:12px; line-height:1.6;">
         Bind this in your hotkey manager:<br>

@@ -1,11 +1,27 @@
-// Talking to the transcription provider outside of a recording: connection
-// checks and model lists, for either ears-stt or any OpenAI-compatible API.
+// Talking to providers outside of a recording: connection checks and model
+// lists, for either an ears service or any OpenAI-compatible API.
 
 use serde::Serialize;
 use std::time::Duration;
 
 use crate::live::{http_client, validate_base_url};
 use crate::state::ProviderKind;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Stt,
+    Llm,
+}
+
+impl Role {
+    pub fn parse(s: &str) -> Result<Role, String> {
+        match s {
+            "stt" => Ok(Role::Stt),
+            "llm" => Ok(Role::Llm),
+            _ => Err(format!("unknown provider role: {s}")),
+        }
+    }
+}
 
 #[derive(Serialize, Default)]
 pub struct ProviderStatus {
@@ -14,6 +30,8 @@ pub struct ProviderStatus {
     pub models: Vec<String>,
     /// ears-stt's live transcription websocket is available.
     pub streaming: bool,
+    /// Listed models that are cleanup-tuned (fixed prompt, no screen context).
+    pub cleanup_models: Vec<String>,
 }
 
 /// The server root of an OpenAI-style base URL (".../v1" -> "...").
@@ -35,19 +53,37 @@ pub fn stream_url(base_url: &str) -> String {
     format!("{ws}/audio/transcriptions/stream")
 }
 
-/// Whether a model id from an OpenAI-style listing transcribes audio. Hosted
-/// APIs list every model they have, so narrow the picker; ears-stt lists only
-/// its own.
-fn fits(id: &str) -> bool {
-    ["whisper", "transcribe"].iter().any(|k| id.contains(k))
+/// Whether a model id from an OpenAI-style listing fits the role. Hosted APIs
+/// list every model they have, so narrow the picker; ears services list only
+/// relevant ones.
+fn fits(role: Role, id: &str) -> bool {
+    let audio = ["whisper", "transcribe"];
+    let not_chat = [
+        "whisper",
+        "transcribe",
+        "tts",
+        "embed",
+        "dall-e",
+        "image",
+        "moderation",
+        "audio",
+        "realtime",
+        "search",
+        "sora",
+    ];
+    match role {
+        Role::Stt => audio.iter().any(|k| id.contains(k)),
+        Role::Llm => !not_chat.iter().any(|k| id.contains(k)),
+    }
 }
 
-/// Model ids the provider offers for transcription.
+/// Model ids for the role, plus those ears-llm marks as cleanup-tuned.
 pub async fn list_models(
     kind: ProviderKind,
+    role: Role,
     base_url: &str,
     api_key: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<(Vec<String>, Vec<String>), String> {
     let json: serde_json::Value = http_client()
         .get(format!("{}/models", base_url.trim_end_matches('/')))
         .bearer_auth(api_key)
@@ -65,8 +101,13 @@ pub async fn list_models(
         .iter()
         .filter_map(|m| m["id"].as_str().map(str::to_string))
         .collect();
+    let cleanup: Vec<String> = data
+        .iter()
+        .filter(|m| m["ears"]["kind"] == "cleanup")
+        .filter_map(|m| m["id"].as_str().map(str::to_string))
+        .collect();
     let mut models: Vec<String> = if kind == ProviderKind::Openai {
-        let fitting: Vec<String> = all.iter().filter(|id| fits(id)).cloned().collect();
+        let fitting: Vec<String> = all.iter().filter(|id| fits(role, id)).cloned().collect();
         if fitting.is_empty() {
             all
         } else {
@@ -76,12 +117,13 @@ pub async fn list_models(
         all
     };
     models.sort();
-    Ok(models)
+    Ok((models, cleanup))
 }
 
 /// Check that a provider is reachable and authorized, and describe it.
 pub async fn check(
     kind: ProviderKind,
+    role: Role,
     base_url: &str,
     api_key: &str,
 ) -> Result<ProviderStatus, String> {
@@ -89,7 +131,10 @@ pub async fn check(
     let mut status = ProviderStatus::default();
 
     if kind == ProviderKind::Ears {
-        let service = "ears-stt";
+        let service = match role {
+            Role::Stt => "ears-stt",
+            Role::Llm => "ears-llm",
+        };
         let health: serde_json::Value = http_client()
             .get(format!("{}/health", root(base_url)))
             .timeout(Duration::from_secs(5))
@@ -102,15 +147,21 @@ pub async fn check(
         if health["service"] != service {
             return Err(format!("not an {service} server"));
         }
+        let version = health["version"].as_str().unwrap_or("?");
         status.streaming = health["streaming"].as_bool().unwrap_or(false);
-        status.message = format!(
-            "{service} {} · default {}",
-            health["version"].as_str().unwrap_or("?"),
-            health["model"].as_str().unwrap_or("?")
-        );
+        status.message = match role {
+            Role::Stt => format!(
+                "{service} {version} · default {}",
+                health["model"].as_str().unwrap_or("?")
+            ),
+            Role::Llm => format!(
+                "{service} {version} · loaded {}",
+                health["loaded"].as_str().unwrap_or("none")
+            ),
+        };
     }
 
-    status.models = list_models(kind, base_url, api_key).await?;
+    (status.models, status.cleanup_models) = list_models(kind, role, base_url, api_key).await?;
     if status.message.is_empty() {
         status.message = format!("connected · {} models", status.models.len());
     }
@@ -141,9 +192,11 @@ mod tests {
     }
 
     #[test]
-    fn transcription_models() {
-        assert!(fits("whisper-1"));
-        assert!(fits("gpt-4o-transcribe"));
-        assert!(!fits("gpt-4o"));
+    fn model_roles() {
+        assert!(fits(Role::Stt, "whisper-1"));
+        assert!(fits(Role::Stt, "gpt-4o-transcribe"));
+        assert!(!fits(Role::Stt, "gpt-4o"));
+        assert!(fits(Role::Llm, "gpt-4o-mini"));
+        assert!(!fits(Role::Llm, "tts-1"));
     }
 }

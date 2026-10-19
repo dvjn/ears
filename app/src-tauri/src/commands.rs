@@ -19,25 +19,28 @@ pub struct AppStatus {
     pub last_result: Option<String>,
 }
 
-/// Settings as exposed to the webview. The API key is deliberately *not*
-/// included — the renderer never needs the secret (the backend reads it from
-/// state for every request), and returning it would turn any script injection
-/// into immediate credential theft. `has_stt_api_key` lets the UI show whether
-/// a key is stored without revealing it.
+/// Settings as exposed to the webview. The API keys are deliberately *not*
+/// included — the renderer never needs the secrets (the backend reads them
+/// from state for every request), and returning them would turn any script
+/// injection into immediate credential theft. `has_*_api_key` lets the UI
+/// show whether a key is stored without revealing it.
 #[derive(Serialize)]
 pub struct SettingsView {
     #[serde(flatten)]
     pub settings: Settings,
     pub has_stt_api_key: bool,
+    pub has_llm_api_key: bool,
 }
 
 impl From<&Settings> for SettingsView {
     fn from(s: &Settings) -> Self {
         let mut settings = s.clone();
         settings.stt_api_key.clear();
+        settings.llm_api_key.clear();
         SettingsView {
             settings,
             has_stt_api_key: !s.stt_api_key.is_empty(),
+            has_llm_api_key: !s.llm_api_key.is_empty(),
         }
     }
 }
@@ -59,9 +62,10 @@ pub fn load_settings(app: &AppHandle, state: &AppState) {
     *state.settings.lock().unwrap() = settings;
 }
 
-/// Settings from before the provider choice were stored as flat keys. They
-/// pointed at some OpenAI-compatible server, so the provider becomes `Openai`
-/// with those values.
+/// Settings from before transcription and post-processing had separate
+/// providers were stored as flat keys sharing one base URL and key. They
+/// pointed at some OpenAI-compatible server, so both providers become
+/// `Openai` with those values.
 fn migrate_flat_settings(get: impl Fn(&str) -> Option<serde_json::Value>) -> Settings {
     let mut s = Settings::default();
     let str_of = |k: &str| get(k).and_then(|v| v.as_str().map(str::to_string));
@@ -71,9 +75,21 @@ fn migrate_flat_settings(get: impl Fn(&str) -> Option<serde_json::Value>) -> Set
     let api_key = str_of("api_key").unwrap_or_default();
 
     s.stt_provider = ProviderKind::Openai;
-    s.stt_base_url = base_url;
-    s.stt_api_key = api_key;
+    s.stt_base_url = base_url.clone();
+    s.stt_api_key = api_key.clone();
     s.stt_model = str_of("model").unwrap_or_default();
+    if get("postprocess_enabled").and_then(|v| v.as_bool()) == Some(true) {
+        s.llm_provider = ProviderKind::Openai;
+    }
+    s.llm_base_url = base_url;
+    s.llm_api_key = api_key;
+    s.llm_model = str_of("postprocess_model").unwrap_or_default();
+    if let Some(p) = str_of("postprocess_prompt").filter(|p| !p.trim().is_empty()) {
+        s.postprocess_prompt = p;
+    }
+    if let Some(v) = get("postprocess_use_screenshot").and_then(|v| v.as_bool()) {
+        s.postprocess_use_screenshot = v;
+    }
     if let Some(v) = get("input_device") {
         s.input_device = v.as_str().map(str::to_string);
     }
@@ -134,21 +150,31 @@ fn persist_settings(app: &AppHandle, settings: &Settings) {
 
 // ---- Tauri commands --------------------------------------------------------
 
-/// Check the transcription provider and list its models. An empty `api_key`
-/// means "use the stored key"; a non-empty one is a key the user just typed.
+/// Check a provider and list its models. An empty `api_key` means "use the
+/// stored key for this role"; a non-empty one is a key the user just typed.
 #[tauri::command]
 pub async fn check_provider(
     state: State<'_, AppState>,
+    role: String,
     kind: ProviderKind,
     base_url: String,
     api_key: String,
 ) -> Result<providers::ProviderStatus, String> {
+    let role = providers::Role::parse(&role)?;
     let api_key = if api_key.is_empty() {
-        state.settings.lock().unwrap().stt_api_key.clone()
+        let s = state.settings.lock().unwrap();
+        match role {
+            providers::Role::Stt => s.stt_api_key.clone(),
+            providers::Role::Llm => s.llm_api_key.clone(),
+        }
     } else {
         api_key
     };
-    providers::check(kind, base_url.trim(), &api_key).await
+    let status = providers::check(kind, role, base_url.trim(), &api_key).await?;
+    if role == providers::Role::Llm {
+        *state.cleanup_models.lock().unwrap() = status.cleanup_models.clone();
+    }
+    Ok(status)
 }
 
 #[tauri::command]
@@ -171,18 +197,32 @@ pub fn save_settings(
 ) -> Result<(), String> {
     let mut settings = settings;
     live::validate_base_url(&settings.stt_base_url)?;
+    if settings.llm_provider != ProviderKind::Off {
+        live::validate_base_url(&settings.llm_base_url)?;
+    }
     {
         let cur = state.settings.lock().unwrap();
         // An empty incoming key means "keep the current one" — the renderer is
-        // never given the saved key to send back (see `SettingsView`).
+        // never given the saved keys to send back (see `SettingsView`).
         if settings.stt_api_key.is_empty() {
             settings.stt_api_key = cur.stt_api_key.clone();
         }
+        if settings.llm_api_key.is_empty() {
+            settings.llm_api_key = cur.llm_api_key.clone();
+        }
         // Likewise, an empty model means "keep current": a transient /models
-        // fetch failure leaves the picker empty, and that must not wipe the
+        // fetch failure leaves a picker empty, and that must not wipe the
         // saved model.
         if settings.stt_model.is_empty() {
             settings.stt_model = cur.stt_model.clone();
+        }
+        if settings.llm_model.is_empty() {
+            settings.llm_model = cur.llm_model.clone();
+        }
+        // An empty prompt falls back to the built-in default rather than
+        // persisting a blank system prompt.
+        if settings.postprocess_prompt.trim().is_empty() {
+            settings.postprocess_prompt = crate::state::default_postprocess_prompt();
         }
     }
     persist_settings(&app, &settings);
@@ -311,6 +351,29 @@ fn api_config(state: &AppState) -> live::ApiConfig {
         stream: s.stt_provider == ProviderKind::Ears,
         input_device: s.input_device.clone(),
     }
+}
+
+/// Build the post-processing config from settings, or `None` if the feature is
+/// off or unconfigured (no chat model). ears-llm may run without a key.
+fn postprocess_config(state: &AppState) -> Option<live::PostProcessConfig> {
+    let s = state.settings.lock().unwrap();
+    let keyless_ok = s.llm_provider == ProviderKind::Ears;
+    if s.llm_provider == ProviderKind::Off
+        || s.llm_model.is_empty()
+        || (s.llm_api_key.is_empty() && !keyless_ok)
+    {
+        return None;
+    }
+    Some(live::PostProcessConfig {
+        base_url: s.llm_base_url.trim().to_string(),
+        api_key: s.llm_api_key.clone(),
+        model: s.llm_model.clone(),
+        ears: s.llm_provider == ProviderKind::Ears,
+        cleanup_tuned: state.cleanup_models.lock().unwrap().contains(&s.llm_model),
+        prompt: s.postprocess_prompt.clone(),
+        use_screenshot: s.postprocess_use_screenshot,
+        capture: s.screenshot_method,
+    })
 }
 
 async fn start_live(app: AppHandle) -> anyhow::Result<()> {
@@ -465,6 +528,41 @@ async fn do_stop_live(app: AppHandle) -> anyhow::Result<()> {
 async fn finalize_transcription(app: &AppHandle, text: String) {
     let state = app.state::<AppState>();
 
+    // Optional LLM clean-up pass. On any failure we keep the raw transcript —
+    // a flaky post-process must never swallow a dictation.
+    let text = if let Some(cfg) = postprocess_config(&state) {
+        eprintln!(
+            "post-process: running (model={}, screenshot={})",
+            cfg.model, cfg.use_screenshot
+        );
+        eprintln!("post-process: raw transcript = {text:?}");
+        let started = std::time::Instant::now();
+        match live::postprocess(app, &text, &cfg).await {
+            Ok(cleaned) if !cleaned.trim().is_empty() => {
+                let changed = cleaned != text;
+                eprintln!(
+                    "post-process: done in {:?} (changed={changed}) result = {cleaned:?}",
+                    started.elapsed()
+                );
+                cleaned
+            }
+            Ok(_) => {
+                eprintln!("post-process: model returned empty text, keeping raw transcript");
+                text
+            }
+            Err(e) => {
+                eprintln!(
+                    "post-process: failed after {:?}, using raw transcript: {e}",
+                    started.elapsed()
+                );
+                text
+            }
+        }
+    } else {
+        eprintln!("post-process: skipped (off, no chat model, or no API key)");
+        text
+    };
+
     let (auto_copy, auto_type) = {
         let s = state.settings.lock().unwrap();
         (s.auto_copy, s.auto_type)
@@ -530,23 +628,28 @@ mod tests {
             "base_url": "http://localhost:10300/v1",
             "api_key": "k",
             "model": "whisper-medium.en",
+            "postprocess_enabled": true,
+            "postprocess_model": "qwen3.5-4b",
             "auto_type": true,
             "history_limit": 50,
         });
         let s = migrate_flat_settings(|k| old.get(k).cloned());
         assert_eq!(s.stt_provider, ProviderKind::Openai);
         assert_eq!(s.stt_base_url, "http://localhost:10300/v1");
-        assert_eq!(s.stt_api_key, "k");
         assert_eq!(s.stt_model, "whisper-medium.en");
+        assert_eq!(s.llm_provider, ProviderKind::Openai);
+        assert_eq!(s.llm_api_key, "k");
+        assert_eq!(s.llm_model, "qwen3.5-4b");
         assert!(s.auto_type);
         assert_eq!(s.history_limit, 50);
     }
 
     #[test]
-    fn fresh_install_defaults_to_ears_stt() {
+    fn fresh_install_defaults_to_ears_services() {
         let s = migrate_flat_settings(|_| None);
         assert_eq!(s.stt_provider, ProviderKind::Ears);
         assert_eq!(s.stt_base_url, crate::state::EARS_STT_URL);
+        assert_eq!(s.llm_provider, ProviderKind::Off);
     }
 
     #[test]
@@ -558,5 +661,6 @@ mod tests {
         let v = serde_json::to_value(SettingsView::from(&s)).unwrap();
         assert_eq!(v["stt_api_key"], "");
         assert_eq!(v["has_stt_api_key"], true);
+        assert_eq!(v["has_llm_api_key"], false);
     }
 }

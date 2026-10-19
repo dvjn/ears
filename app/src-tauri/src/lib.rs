@@ -1,6 +1,7 @@
 mod commands;
 mod live;
 mod mics;
+mod ocr;
 mod providers;
 mod state;
 mod stream;
