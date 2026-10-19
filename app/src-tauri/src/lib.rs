@@ -1,6 +1,7 @@
 mod commands;
 mod live;
 mod mics;
+mod providers;
 mod state;
 mod tray;
 
@@ -59,7 +60,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
-            list_provider_models,
+            check_provider,
             list_input_devices,
             get_status,
             get_history,

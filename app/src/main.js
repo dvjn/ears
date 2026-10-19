@@ -20,13 +20,9 @@ const recordBtn         = document.getElementById('record-btn');
 const recordLabel       = document.getElementById('record-label');
 const historyList       = document.getElementById('history-list');
 const clearHistoryBtn   = document.getElementById('clear-history-btn');
-const baseUrlInput        = document.getElementById('base-url-input');
-const apiKeyInput         = document.getElementById('api-key-input');
-const modelSelect         = document.getElementById('model-select');
-const refreshModelsBtn    = document.getElementById('refresh-models-btn');
-const langSelect          = document.getElementById('language-select');
-const deviceSelect        = document.getElementById('input-device-select');
-const devicesRefreshBtn   = document.getElementById('devices-refresh-btn');
+const langSelect        = document.getElementById('language-select');
+const deviceSelect      = document.getElementById('input-device-select');
+const devicesRefreshBtn = document.getElementById('devices-refresh-btn');
 const silenceStopInput  = document.getElementById('silence-stop-input');
 const maxDurInput       = document.getElementById('max-duration-input');
 const autoCopyInput     = document.getElementById('auto-copy-input');
@@ -152,45 +148,6 @@ function renderHistory(history) {
   });
 }
 
-// Models
-// Returns true on success, false if it couldn't fetch (so callers can suppress
-// a misleading "Saved" toast). An empty apiKey tells the backend to use the
-// stored key.
-async function fetchAndRenderModels(savedModel) {
-  const baseUrl = baseUrlInput.value.trim() || 'https://api.openai.com/v1';
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey && !hasStoredKey) {
-    modelSelect.innerHTML = '<option value="">Enter API key first</option>';
-    return false;
-  }
-  refreshModelsBtn.disabled = true;
-  refreshModelsBtn.textContent = '…';
-  try {
-    const models = await invoke('list_provider_models', { baseUrl, apiKey });
-    modelSelect.innerHTML = '';
-    for (const m of models) {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      modelSelect.appendChild(opt);
-    }
-    if (savedModel && models.includes(savedModel)) {
-      modelSelect.value = savedModel;
-    } else {
-      const small = models.find(m => m.includes('small'));
-      modelSelect.value = small ?? models[0] ?? '';
-    }
-    return true;
-  } catch (e) {
-    modelSelect.innerHTML = '<option value="">Failed to load</option>';
-    showToast(`Models: ${e}`);
-    return false;
-  } finally {
-    refreshModelsBtn.disabled = false;
-    refreshModelsBtn.textContent = '↻';
-  }
-}
-
 clearHistoryBtn.onclick = async () => {
   try {
     await invoke('clear_history');
@@ -201,7 +158,72 @@ clearHistoryBtn.onclick = async () => {
   }
 };
 
-refreshModelsBtn.onclick = () => fetchAndRenderModels(modelSelect.value);
+// Providers
+//
+// Transcription ("stt") has a provider: ears-stt or any OpenAI-compatible
+// API. The backend never sends saved API keys to the renderer (it reports only
+// `has_*_api_key`); key fields stay blank with a placeholder when a key is
+// stored, and an empty field on save means "keep the key".
+const PRESET_URLS = {
+  stt: { ears: 'http://localhost:13278/v1', openai: 'https://api.openai.com/v1' },
+};
+
+function providerUi(role) {
+  return {
+    role,
+    provider: document.getElementById(`${role}-provider-select`),
+    url: document.getElementById(`${role}-url-input`),
+    key: document.getElementById(`${role}-key-input`),
+    model: document.getElementById(`${role}-model-select`),
+    refresh: document.getElementById(`${role}-refresh-btn`),
+    hasKey: false,
+  };
+}
+const stt = providerUi('stt');
+
+function renderKeyPlaceholder(ui) {
+  ui.key.value = '';
+  ui.key.placeholder = ui.hasKey ? '••••••••' : (ui.provider.value === 'ears' ? 'none' : 'sk-…');
+}
+
+// Check the provider and refill its model picker. Returns true on success, so
+// callers can suppress a misleading "Saved" toast.
+async function refreshProvider(ui, savedModel) {
+  if (ui.provider.value === 'off') return true;
+  ui.refresh.disabled = true;
+  ui.refresh.textContent = '…';
+  try {
+    const status = await invoke('check_provider', {
+      kind: ui.provider.value,
+      baseUrl: ui.url.value.trim(),
+      apiKey: ui.key.value.trim(),
+    });
+    ui.model.replaceChildren(...status.models.map(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      return opt;
+    }));
+    const keep = savedModel && status.models.includes(savedModel);
+    // Fresh pick: ears-stt's default whisper.
+    ui.model.value = keep ? savedModel : (status.models.find(m => m.includes('medium.en')) ?? status.models[0] ?? '');
+    return true;
+  } catch (e) {
+    // Keep the saved model selectable so a server that's down doesn't wipe it.
+    ui.model.replaceChildren();
+    if (savedModel) {
+      const opt = document.createElement('option');
+      opt.value = savedModel;
+      opt.textContent = savedModel;
+      ui.model.appendChild(opt);
+    }
+    showToast(`Transcription: ${e}`);
+    return false;
+  } finally {
+    ui.refresh.disabled = false;
+    ui.refresh.textContent = '↻';
+  }
+}
 
 async function loadDevices(saved) {
   devicesRefreshBtn.disabled = true;
@@ -227,32 +249,33 @@ async function loadDevices(saved) {
 }
 
 // Settings
-//
-// The backend never sends the saved API key to the renderer (it reports only
-// `has_api_key`). The key field stays blank with a placeholder when a key is
-// stored; an empty field on save means "keep the current key".
-let hasStoredKey = false;
 
 async function loadSettings() {
   const s = await invoke('get_settings');
-  baseUrlInput.value = s.base_url ?? 'https://api.openai.com/v1';
-  hasStoredKey = !!s.has_api_key;
-  apiKeyInput.value = '';
-  apiKeyInput.placeholder = hasStoredKey ? '••••••••' : 'sk-…';
-  await Promise.all([fetchAndRenderModels(s.model), loadDevices(s.input_device)]);
+  for (const [ui, prefix] of [[stt, 'stt']]) {
+    ui.provider.value = s[`${prefix}_provider`];
+    ui.url.value = s[`${prefix}_base_url`];
+    ui.hasKey = !!s[`has_${prefix}_api_key`];
+    renderKeyPlaceholder(ui);
+  }
   langSelect.value = s.language ?? 'auto';
   silenceStopInput.value = s.silence_stop_secs ?? 3;
   maxDurInput.value = s.max_duration_secs;
   autoCopyInput.checked = s.auto_copy ?? true;
   autoTypeInput.checked = s.auto_type ?? false;
   historyLimitInput.value = s.history_limit ?? 10;
+  await Promise.all([
+    refreshProvider(stt, s.stt_model),
+    loadDevices(s.input_device),
+  ]);
 }
 
 function collectSettings() {
   return {
-    base_url: baseUrlInput.value.trim() || 'https://api.openai.com/v1',
-    api_key: apiKeyInput.value.trim(),
-    model: modelSelect.value,
+    stt_provider: stt.provider.value,
+    stt_base_url: stt.url.value.trim(),
+    stt_api_key: stt.key.value.trim(),
+    stt_model: stt.model.value,
     input_device: deviceSelect.value || null,
     language: langSelect.value === 'auto' ? null : langSelect.value,
     silence_stop_secs: Math.max(0, Math.min(60, parseInt(silenceStopInput.value, 10) || 0)),
@@ -268,12 +291,12 @@ async function saveSettings({ silent = false } = {}) {
   const s = collectSettings();
   try {
     await invoke('save_settings', { settings: s });
-    // If the user typed a new key, it's now stored — clear the field and switch
-    // to the "saved" placeholder so we don't keep resending it.
-    if (s.api_key) {
-      hasStoredKey = true;
-      apiKeyInput.value = '';
-      apiKeyInput.placeholder = '••••••••';
+    // A newly typed key is now stored; clear the field so it isn't resent.
+    for (const ui of [stt]) {
+      if (ui.key.value.trim()) {
+        ui.hasKey = true;
+        renderKeyPlaceholder(ui);
+      }
     }
     if (!silent) showToast('Saved');
   } catch (e) {
@@ -281,18 +304,33 @@ async function saveSettings({ silent = false } = {}) {
   }
 }
 
-// Connection fields also refresh the model list, then save. If the model fetch
-// failed, suppress the "Saved" toast so it doesn't mask the error.
-async function onConnectionChange() {
-  const ok = await fetchAndRenderModels(modelSelect.value);
-  await saveSettings({ silent: !ok });
+for (const ui of [stt]) {
+  // Switching provider swaps in that provider's usual URL, unless the user
+  // has typed a custom one.
+  ui.provider.addEventListener('change', async () => {
+    const presets = Object.values(PRESET_URLS[ui.role]);
+    const preset = PRESET_URLS[ui.role][ui.provider.value];
+    if (preset && (!ui.url.value.trim() || presets.includes(ui.url.value.trim()))) {
+      ui.url.value = preset;
+    }
+    renderKeyPlaceholder(ui);
+    const ok = await refreshProvider(ui, ui.model.value);
+    await saveSettings({ silent: !ok });
+  });
+  const onConnectionChange = async () => {
+    const ok = await refreshProvider(ui, ui.model.value);
+    await saveSettings({ silent: !ok });
+  };
+  ui.url.addEventListener('change', onConnectionChange);
+  ui.key.addEventListener('change', onConnectionChange);
+  ui.refresh.onclick = () => refreshProvider(ui, ui.model.value);
+  ui.model.addEventListener('change', saveSettings);
 }
 
-baseUrlInput.addEventListener('change', onConnectionChange);
-apiKeyInput.addEventListener('change', onConnectionChange);
 devicesRefreshBtn.onclick = () => loadDevices(deviceSelect.value || null);
 
-[modelSelect, deviceSelect, langSelect, silenceStopInput, autoCopyInput, autoTypeInput, maxDurInput, historyLimitInput]
+[deviceSelect, langSelect, silenceStopInput, autoCopyInput, autoTypeInput, maxDurInput,
+ historyLimitInput]
   .forEach(el => el.addEventListener('change', saveSettings));
 
 // Buttons
@@ -338,7 +376,7 @@ listen('transcription-done', (e) => {
 listen('transcription-error', (e) => showToast(e.payload));
 
 listen('error-no-api-key', () => {
-  showToast('No API key set — go to Settings');
+  showToast('No transcription API key set — go to Settings');
   document.querySelector('.tab-btn[data-tab="settings"]').click();
 });
 

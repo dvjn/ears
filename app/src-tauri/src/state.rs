@@ -10,18 +10,30 @@ pub enum RecordingState {
     Transcribing,
 }
 
-fn default_base_url() -> String {
-    "https://api.openai.com/v1".to_string()
+/// Which kind of server a provider points at. `Ears` is ears-stt (adds a
+/// health check); `Openai` is any OpenAI-compatible API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderKind {
+    #[default]
+    Ears,
+    Openai,
 }
+
+pub const EARS_STT_URL: &str = "http://localhost:13278/v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
-    #[serde(default = "default_base_url")]
-    pub base_url: String,
+    // Transcription provider.
     #[serde(default)]
-    pub api_key: String,
+    pub stt_provider: ProviderKind,
+    #[serde(default = "default_stt_url")]
+    pub stt_base_url: String,
     #[serde(default)]
-    pub model: String,
+    pub stt_api_key: String,
+    #[serde(default)]
+    pub stt_model: String,
+
     /// Microphone id (see mics.rs); `None` uses the system default.
     #[serde(default)]
     pub input_device: Option<String>,
@@ -41,6 +53,9 @@ pub struct Settings {
     pub history_limit: usize,
 }
 
+fn default_stt_url() -> String {
+    EARS_STT_URL.to_string()
+}
 fn default_history_limit() -> usize {
     10
 }
@@ -59,18 +74,8 @@ fn default_language() -> Option<String> {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self {
-            base_url: default_base_url(),
-            api_key: String::new(),
-            model: String::new(),
-            input_device: None,
-            language: Some("en".to_string()),
-            max_duration_secs: 120,
-            silence_stop_secs: 3,
-            auto_type: false,
-            auto_copy: true,
-            history_limit: 10,
-        }
+        // Deserializing an empty object applies every serde default above.
+        serde_json::from_value(serde_json::json!({})).expect("settings defaults")
     }
 }
 

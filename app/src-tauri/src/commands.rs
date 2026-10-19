@@ -6,8 +6,8 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_store::StoreExt;
 
 use crate::{
-    live,
-    state::{AppState, RecordingState, Settings},
+    live, providers,
+    state::{AppState, ProviderKind, RecordingState, Settings},
     tray::{set_tray_last_result, set_tray_recording},
 };
 
@@ -22,35 +22,22 @@ pub struct AppStatus {
 /// Settings as exposed to the webview. The API key is deliberately *not*
 /// included — the renderer never needs the secret (the backend reads it from
 /// state for every request), and returning it would turn any script injection
-/// into immediate credential theft. `has_api_key` lets the UI show whether a
-/// key is already stored without revealing it.
+/// into immediate credential theft. `has_stt_api_key` lets the UI show whether
+/// a key is stored without revealing it.
 #[derive(Serialize)]
 pub struct SettingsView {
-    pub base_url: String,
-    pub model: String,
-    pub input_device: Option<String>,
-    pub language: Option<String>,
-    pub max_duration_secs: u32,
-    pub silence_stop_secs: u32,
-    pub auto_type: bool,
-    pub auto_copy: bool,
-    pub history_limit: usize,
-    pub has_api_key: bool,
+    #[serde(flatten)]
+    pub settings: Settings,
+    pub has_stt_api_key: bool,
 }
 
 impl From<&Settings> for SettingsView {
     fn from(s: &Settings) -> Self {
+        let mut settings = s.clone();
+        settings.stt_api_key.clear();
         SettingsView {
-            base_url: s.base_url.clone(),
-            model: s.model.clone(),
-            input_device: s.input_device.clone(),
-            language: s.language.clone(),
-            max_duration_secs: s.max_duration_secs,
-            silence_stop_secs: s.silence_stop_secs,
-            auto_type: s.auto_type,
-            auto_copy: s.auto_copy,
-            history_limit: s.history_limit,
-            has_api_key: !s.api_key.is_empty(),
+            settings,
+            has_stt_api_key: !s.stt_api_key.is_empty(),
         }
     }
 }
@@ -61,46 +48,54 @@ pub fn load_settings(app: &AppHandle, state: &AppState) {
     let Ok(store) = app.store(STORE_FILE) else {
         return;
     };
-    let mut settings = state.settings.lock().unwrap();
-    if let Some(v) = store
-        .get("base_url")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-    {
-        settings.base_url = v;
+    let settings = match store.get("settings") {
+        Some(v) => serde_json::from_value(v).unwrap_or_default(),
+        None => {
+            let migrated = migrate_flat_settings(|k| store.get(k));
+            persist_settings(app, &migrated);
+            migrated
+        }
+    };
+    *state.settings.lock().unwrap() = settings;
+}
+
+/// Settings from before the provider choice were stored as flat keys. They
+/// pointed at some OpenAI-compatible server, so the provider becomes `Openai`
+/// with those values.
+fn migrate_flat_settings(get: impl Fn(&str) -> Option<serde_json::Value>) -> Settings {
+    let mut s = Settings::default();
+    let str_of = |k: &str| get(k).and_then(|v| v.as_str().map(str::to_string));
+    let Some(base_url) = str_of("base_url") else {
+        return s; // fresh install
+    };
+    let api_key = str_of("api_key").unwrap_or_default();
+
+    s.stt_provider = ProviderKind::Openai;
+    s.stt_base_url = base_url;
+    s.stt_api_key = api_key;
+    s.stt_model = str_of("model").unwrap_or_default();
+    if let Some(v) = get("input_device") {
+        s.input_device = v.as_str().map(str::to_string);
     }
-    if let Some(v) = store
-        .get("api_key")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-    {
-        settings.api_key = v;
+    if let Some(v) = get("language") {
+        s.language = v.as_str().map(str::to_string);
     }
-    if let Some(v) = store
-        .get("model")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-    {
-        settings.model = v;
+    if let Some(v) = get("max_duration_secs").and_then(|v| v.as_u64()) {
+        s.max_duration_secs = v as u32;
     }
-    if let Some(v) = store.get("input_device") {
-        settings.input_device = v.as_str().map(|s| s.to_string());
+    if let Some(v) = get("silence_stop_secs").and_then(|v| v.as_u64()) {
+        s.silence_stop_secs = v as u32;
     }
-    if let Some(v) = store.get("language") {
-        settings.language = v.as_str().map(|s| s.to_string());
+    if let Some(v) = get("auto_type").and_then(|v| v.as_bool()) {
+        s.auto_type = v;
     }
-    if let Some(v) = store.get("max_duration_secs").and_then(|v| v.as_u64()) {
-        settings.max_duration_secs = v as u32;
+    if let Some(v) = get("auto_copy").and_then(|v| v.as_bool()) {
+        s.auto_copy = v;
     }
-    if let Some(v) = store.get("silence_stop_secs").and_then(|v| v.as_u64()) {
-        settings.silence_stop_secs = v as u32;
+    if let Some(v) = get("history_limit").and_then(|v| v.as_u64()) {
+        s.history_limit = (v as usize).clamp(1, 9999);
     }
-    if let Some(v) = store.get("auto_type").and_then(|v| v.as_bool()) {
-        settings.auto_type = v;
-    }
-    if let Some(v) = store.get("auto_copy").and_then(|v| v.as_bool()) {
-        settings.auto_copy = v;
-    }
-    if let Some(v) = store.get("history_limit").and_then(|v| v.as_u64()) {
-        settings.history_limit = (v as usize).clamp(1, 9999);
-    }
+    s
 }
 
 pub fn load_history(app: &AppHandle, state: &AppState) {
@@ -132,55 +127,28 @@ fn persist_settings(app: &AppHandle, settings: &Settings) {
     let Ok(store) = app.store(STORE_FILE) else {
         return;
     };
-    store.set("base_url", settings.base_url.clone());
-    store.set("api_key", settings.api_key.clone());
-    store.set("model", settings.model.clone());
-    store.set("input_device", serde_json::json!(settings.input_device));
-    store.set("language", serde_json::json!(settings.language));
-    store.set("max_duration_secs", settings.max_duration_secs);
-    store.set("silence_stop_secs", settings.silence_stop_secs);
-    store.set("auto_type", settings.auto_type);
-    store.set("auto_copy", settings.auto_copy);
-    store.set("history_limit", settings.history_limit);
+    store.clear();
+    store.set("settings", serde_json::json!(settings));
     let _ = store.save();
 }
 
 // ---- Tauri commands --------------------------------------------------------
 
+/// Check the transcription provider and list its models. An empty `api_key`
+/// means "use the stored key"; a non-empty one is a key the user just typed.
 #[tauri::command]
-pub async fn list_provider_models(
+pub async fn check_provider(
     state: State<'_, AppState>,
+    kind: ProviderKind,
     base_url: String,
     api_key: String,
-) -> Result<Vec<String>, String> {
-    // The renderer no longer holds the saved key (see `SettingsView`); an empty
-    // `api_key` means "use the stored one". A non-empty value is a key the user
-    // just typed but hasn't saved yet.
-    live::validate_base_url(&base_url)?;
+) -> Result<providers::ProviderStatus, String> {
     let api_key = if api_key.is_empty() {
-        state.settings.lock().unwrap().api_key.clone()
+        state.settings.lock().unwrap().stt_api_key.clone()
     } else {
         api_key
     };
-    let resp = live::http_client()
-        .get(format!("{base_url}/models"))
-        .bearer_auth(&api_key)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?;
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let mut models: Vec<String> = json["data"]
-        .as_array()
-        .map(|a| a.as_slice())
-        .unwrap_or(&[])
-        .iter()
-        .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
-        .filter(|id| id.contains("whisper"))
-        .collect();
-    models.sort();
-    Ok(models)
+    providers::check(kind, base_url.trim(), &api_key).await
 }
 
 #[tauri::command]
@@ -202,19 +170,19 @@ pub fn save_settings(
     settings: Settings,
 ) -> Result<(), String> {
     let mut settings = settings;
-    live::validate_base_url(&settings.base_url)?;
+    live::validate_base_url(&settings.stt_base_url)?;
     {
         let cur = state.settings.lock().unwrap();
         // An empty incoming key means "keep the current one" — the renderer is
         // never given the saved key to send back (see `SettingsView`).
-        if settings.api_key.is_empty() {
-            settings.api_key = cur.api_key.clone();
+        if settings.stt_api_key.is_empty() {
+            settings.stt_api_key = cur.stt_api_key.clone();
         }
         // Likewise, an empty model means "keep current": a transient /models
-        // fetch failure leaves the picker empty, and we must not let that wipe
-        // the user's saved model.
-        if settings.model.is_empty() {
-            settings.model = cur.model.clone();
+        // fetch failure leaves the picker empty, and that must not wipe the
+        // saved model.
+        if settings.stt_model.is_empty() {
+            settings.stt_model = cur.stt_model.clone();
         }
     }
     persist_settings(&app, &settings);
@@ -336,9 +304,9 @@ pub async fn toggle_recording(app: AppHandle) -> anyhow::Result<()> {
 fn api_config(state: &AppState) -> live::ApiConfig {
     let s = state.settings.lock().unwrap();
     live::ApiConfig {
-        base_url: s.base_url.clone(),
-        api_key: s.api_key.clone(),
-        model: s.model.clone(),
+        base_url: s.stt_base_url.trim().to_string(),
+        api_key: s.stt_api_key.clone(),
+        model: s.stt_model.clone(),
         language: s.language.clone(),
         input_device: s.input_device.clone(),
     }
@@ -348,7 +316,9 @@ async fn start_live(app: AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
 
     let config = api_config(&state);
-    if config.api_key.is_empty() {
+    // ears-stt on localhost may run without a key; any other provider needs one.
+    let keyless_ok = state.settings.lock().unwrap().stt_provider == ProviderKind::Ears;
+    if config.api_key.is_empty() && !keyless_ok {
         *state.recording.lock().unwrap() = RecordingState::Idle;
         let _ = app.emit("error-no-api-key", ());
         return Ok(());
@@ -546,4 +516,46 @@ async fn finalize_transcription(app: &AppHandle, text: String) {
     let _ = app.emit("transcription-done", &text);
     let _ = app.emit("recording-state-changed", "idle");
     *state.recording.lock().unwrap() = RecordingState::Idle;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn migrates_shared_provider_settings() {
+        let old = json!({
+            "base_url": "http://localhost:10300/v1",
+            "api_key": "k",
+            "model": "whisper-medium.en",
+            "auto_type": true,
+            "history_limit": 50,
+        });
+        let s = migrate_flat_settings(|k| old.get(k).cloned());
+        assert_eq!(s.stt_provider, ProviderKind::Openai);
+        assert_eq!(s.stt_base_url, "http://localhost:10300/v1");
+        assert_eq!(s.stt_api_key, "k");
+        assert_eq!(s.stt_model, "whisper-medium.en");
+        assert!(s.auto_type);
+        assert_eq!(s.history_limit, 50);
+    }
+
+    #[test]
+    fn fresh_install_defaults_to_ears_stt() {
+        let s = migrate_flat_settings(|_| None);
+        assert_eq!(s.stt_provider, ProviderKind::Ears);
+        assert_eq!(s.stt_base_url, crate::state::EARS_STT_URL);
+    }
+
+    #[test]
+    fn view_hides_keys() {
+        let s = Settings {
+            stt_api_key: "secret".into(),
+            ..Settings::default()
+        };
+        let v = serde_json::to_value(SettingsView::from(&s)).unwrap();
+        assert_eq!(v["stt_api_key"], "");
+        assert_eq!(v["has_stt_api_key"], true);
+    }
 }

@@ -49,17 +49,27 @@
       <h3>Settings</h3>
       <div class="form-row">
         <div class="form-label-group">
+          <span class="form-label">Provider</span>
+          <span class="form-hint">ears-stt server or any OpenAI-compatible API</span>
+        </div>
+        <select id="stt-provider-select">
+          <option value="ears">ears-stt</option>
+          <option value="openai">OpenAI-compatible</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-label-group">
           <span class="form-label">Base URL</span>
           <span class="form-hint">OpenAI-compatible API base URL</span>
         </div>
-        <input id="base-url-input" type="text" placeholder="https://api.openai.com/v1" style="flex:1" />
+        <input id="stt-url-input" type="text" style="flex:1" />
       </div>
       <div class="form-row">
         <div class="form-label-group">
           <span class="form-label">API Key</span>
           <span class="form-hint">Your provider API key</span>
         </div>
-        <input id="api-key-input" type="password" placeholder="sk-..." />
+        <input id="stt-key-input" type="password" />
       </div>
       <div class="form-row">
         <div class="form-label-group">
@@ -67,8 +77,8 @@
           <span class="form-hint">Transcription model to use</span>
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <select id="model-select" style="flex:1"></select>
-          <button id="refresh-models-btn" class="sm" title="Fetch models from API">↻</button>
+          <select id="stt-model-select" style="flex:1"></select>
+          <button id="stt-refresh-btn" class="sm" title="Fetch models from API">↻</button>
         </div>
       </div>
       <div class="form-row">
