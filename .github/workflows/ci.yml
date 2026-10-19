@@ -39,13 +39,13 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: './app/src-tauri -> target'
 
       - name: rustfmt
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
+        run: cargo fmt --manifest-path app/src-tauri/Cargo.toml --all --check
 
       - name: clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --manifest-path app/src-tauri/Cargo.toml --all-targets -- -D warnings
 
   build:
     strategy:
@@ -77,7 +77,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: './app/src-tauri -> target'
 
       - name: cargo check
-        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+        run: cargo check --manifest-path app/src-tauri/Cargo.toml --all-targets
