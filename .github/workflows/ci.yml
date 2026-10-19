@@ -39,7 +39,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './app/src-tauri -> target'
+          workspaces: '. -> target'
 
       - name: rustfmt
         run: cargo fmt --manifest-path app/src-tauri/Cargo.toml --all --check
@@ -77,7 +77,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './app/src-tauri -> target'
+          workspaces: '. -> target'
 
       - name: cargo check
         run: cargo check --manifest-path app/src-tauri/Cargo.toml --all-targets
