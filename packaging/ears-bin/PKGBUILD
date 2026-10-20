@@ -16,6 +16,7 @@ optdepends=(
 )
 provides=('ears')
 conflicts=('ears')
+options=('!debug')
 install=ears-bin.install
 source=("ears_${pkgver}_amd64.deb::$url/releases/download/v$pkgver/ears_${pkgver}_amd64.deb"
         "LICENSE-$pkgver::https://raw.githubusercontent.com/dvjn/ears/v$pkgver/LICENSE")

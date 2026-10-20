@@ -16,6 +16,7 @@ optdepends=(
 )
 provides=('ears-stt')
 conflicts=('ears-stt')
+options=('!debug')
 install=ears-stt-bin.install
 source=("$url/releases/download/v$pkgver/ears-stt-$pkgver-x86_64.tar.gz")
 sha256sums=('SKIP')

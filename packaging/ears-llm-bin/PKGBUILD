@@ -16,6 +16,7 @@ optdepends=(
 )
 provides=('ears-llm')
 conflicts=('ears-llm')
+options=('!debug')
 install=ears-llm-bin.install
 source=("$url/releases/download/v$pkgver/ears-llm-$pkgver-x86_64.tar.gz")
 sha256sums=('SKIP')
