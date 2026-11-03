@@ -1,10 +1,10 @@
 name: release
 
+# release-please publishes the release, with its notes; this builds the
+# assets and uploads them to it.
 on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
+  release:
+    types: [published]
 
 env:
   # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
@@ -70,9 +70,6 @@ jobs:
         with:
           projectPath: app
           tagName: ${{ github.ref_name }}
-          releaseName: ${{ github.ref_name }}
-          releaseDraft: true
-          prerelease: false
           args: ${{ matrix.args }}
 
   servers:
@@ -114,9 +111,3 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" ears-*-x86_64.tar.gz built-with.txt --repo "$GITHUB_REPOSITORY" --clobber
 
-      - name: Write the release notes
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          notes=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body)
-          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes "$notes"
