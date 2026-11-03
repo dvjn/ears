@@ -6,6 +6,8 @@
     ":disableRateLimiting",
     "customManagers:githubActionsVersions"
   ],
+  "description": "Conventional commits from the start; auto-detection reads the older history as plain",
+  "semanticCommits": "enabled",
   "dependencyDashboard": true,
   "osvVulnerabilityAlerts": true,
   "packageRules": [
