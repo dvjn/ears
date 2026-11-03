@@ -49,6 +49,11 @@
       "groupName": "tauri"
     },
     {
+      "description": "Runner images stay put: CI conditions match ubuntu-22.04, and release builds use it for an older glibc",
+      "matchDatasources": ["github-runners"],
+      "enabled": false
+    },
+    {
       "description": "Actions share one PR",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
