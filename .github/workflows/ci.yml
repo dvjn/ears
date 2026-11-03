@@ -25,7 +25,7 @@ jobs:
         platform: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           lfs: true
 
@@ -41,13 +41,13 @@ jobs:
             patchelf
 
       - name: Setup toolchain (rust, node, pnpm)
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
           version: ${{ env.MISE_VERSION }}
           cache: true
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: '. -> target'
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -77,7 +77,7 @@ jobs:
       - name: Install dependencies
         run: pacman -Syu --noconfirm --needed git git-lfs base-devel clang rustup whisper-cpp llama-cpp
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup rust
         run: rustup default stable && rustup component add clippy
