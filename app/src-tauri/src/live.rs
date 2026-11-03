@@ -783,7 +783,6 @@ fn resample_to_16k(samples: Vec<f32>, from_rate: u32) -> Result<Vec<f32>> {
         from_rate as usize,
         TARGET_RATE as usize,
         chunk_size,
-        2,
         channels,
         FixedSync::Input,
     )
