@@ -23,7 +23,7 @@ tokio = { version = "1", features = ["full"] }
 
 cpal = { version = "0.18.2", features = ["pulseaudio"] }
 reqwest = { version = "0.13", features = ["multipart", "json"] }
-rubato = { version = "3.0", features = ["fft_resampler"] }
+rubato = { version = "5.0", features = ["fft_resampler"] }
 anyhow = "1"
 enigo = "0.6"
 image = "0.25.10"
