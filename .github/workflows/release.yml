@@ -37,7 +37,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
@@ -53,12 +53,6 @@ jobs:
       - name: Add macOS cross-targets
         if: matrix.platform == 'macos-latest'
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: '. -> target'
-          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install frontend dependencies
         working-directory: app
@@ -76,7 +70,6 @@ jobs:
     # ears-stt and ears-llm link Arch's whisper.cpp and llama.cpp, so they are
     # built on Arch. built-with.txt records the versions the AUR -bin
     # packages pin.
-    needs: release
     permissions:
       contents: write
     runs-on: ubuntu-latest
