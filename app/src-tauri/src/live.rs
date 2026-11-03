@@ -581,6 +581,8 @@ async fn run_vad_loop(
 
             let rms = (frame.iter().map(|x| x * x).sum::<f32>() / frame.len() as f32).sqrt();
             let threshold = noise * 3.0 + 0.005;
+            // Feeds the overlay's waveform, every frame (~33 Hz).
+            let _ = app.emit("mic-level", rms);
 
             if rms > threshold {
                 voiced_ms += FRAME_MS;

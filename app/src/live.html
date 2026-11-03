@@ -45,24 +45,15 @@
     .bar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 12px;
       flex-shrink: 0;
     }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-      color: var(--text);
+    #wave {
+      width: 46px;
+      height: 24px;
+      flex-shrink: 0;
     }
-    .brand .rec {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--danger);
-    }
+    .spacer { flex: 1; }
     #stop {
       display: flex;
       align-items: center;
@@ -78,6 +69,46 @@
       cursor: pointer;
       transition: background 0.15s, border-color 0.15s, color 0.15s;
     }
+    #mic {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    #mic:hover, #mic.open { background: var(--surface); color: var(--text); }
+    #mic svg { width: 14px; height: 14px; }
+    #mics {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    #mics[hidden] { display: none; }
+    #mics button {
+      text-align: left;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 5px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #mics button:hover { background: var(--surface); color: var(--text); }
+    #mics button.current { color: var(--accent); }
     #stop:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
     #stop .sq { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
     #text {
@@ -89,16 +120,19 @@
     #text::-webkit-scrollbar { display: none; }
     .committed { color: var(--text); }
     .partial { color: var(--text-dim); }
-    #text.placeholder { color: var(--text-dim); }
+    #text:empty, #mics:not([hidden]) + #text { display: none; }
   </style>
 </head>
 <body>
   <div id="panel">
     <div class="bar">
-      <span class="brand"><span class="rec"></span>ears</span>
+      <canvas id="wave"></canvas>
+      <span class="spacer"></span>
+      <button id="mic" title="Microphone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg></button>
       <button id="stop"><span class="sq"></span>Stop</button>
     </div>
-    <div id="text" class="placeholder">Start speaking…</div>
+    <div id="mics" hidden></div>
+    <div id="text"></div>
   </div>
   <script src="live.js"></script>
 </body>

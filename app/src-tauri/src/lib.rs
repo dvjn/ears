@@ -64,6 +64,7 @@ pub fn run() {
             save_settings,
             check_provider,
             list_input_devices,
+            switch_mic,
             get_status,
             get_history,
             remove_history_item,

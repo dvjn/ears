@@ -184,6 +184,37 @@ pub async fn list_input_devices() -> Vec<crate::mics::Mic> {
         .unwrap_or_default()
 }
 
+/// Pick the microphone from the live overlay. Saves it as the default and
+/// restarts a running dictation on it (a mic is usually switched because the
+/// current one isn't hearing anything, so the text so far is dropped).
+#[tauri::command]
+pub async fn switch_mic(app: AppHandle, id: Option<String>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let settings = {
+        let mut s = state.settings.lock().unwrap();
+        s.input_device = id.clone();
+        s.clone()
+    };
+    persist_settings(&app, &settings);
+    let _ = app.emit("input-device-changed", &id);
+
+    let running = {
+        let mut guard = state.recording.lock().unwrap();
+        match std::mem::replace(&mut *guard, RecordingState::Transcribing) {
+            RecordingState::LiveRecording { session } => Some(session),
+            other => {
+                *guard = other;
+                None
+            }
+        }
+    };
+    if let Some(session) = running {
+        drop(session);
+        start_live(app).await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_settings(state: State<AppState>) -> SettingsView {
     SettingsView::from(&*state.settings.lock().unwrap())

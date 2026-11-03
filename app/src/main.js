@@ -434,8 +434,13 @@ listen('live-partial', (e) => { livePartial = e.payload?.text ?? ''; renderLiveP
 listen('live-reset', () => { resetLivePreview(); });
 listen('live-error', (e) => showToast(`Live: ${e.payload}`));
 
+// The live overlay switched microphones; keep this picker in step so the
+// next auto-save doesn't put the old one back.
+listen('input-device-changed', (e) => loadDevices(e.payload ?? null));
+
 // The microphone wouldn't open or sent no audio even after ears reopened it:
 // say so and put the user at the microphone picker.
+
 listen('mic-failed', async (e) => {
   showToast(e.payload);
   document.querySelector('.tab-btn[data-tab="settings"]').click();
