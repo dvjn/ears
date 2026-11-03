@@ -1,0 +1,85 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":disableRateLimiting",
+    "customManagers:githubActionsVersions"
+  ],
+  "dependencyDashboard": true,
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "description": "Crate patches share one PR, which also runs cargo update so indirect crates get refreshed",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "rust crates",
+      "postUpgradeTasks": {
+        "commands": ["cargo update"],
+        "fileFilters": ["Cargo.lock"],
+        "executionMode": "branch",
+        "installTools": { "rust": {} }
+      }
+    },
+    {
+      "description": "So do minor bumps of 1.x+ crates; 0.x minors are breaking in Cargo semver and stay separate",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor"],
+      "matchCurrentVersion": "!/^0\\./",
+      "groupName": "rust crates",
+      "postUpgradeTasks": {
+        "commands": ["cargo update"],
+        "fileFilters": ["Cargo.lock"],
+        "executionMode": "branch",
+        "installTools": { "rust": {} }
+      }
+    },
+    {
+      "description": "Frontend packages share one PR",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm packages"
+    },
+    {
+      "description": "Tauri's crates and npm packages move together; the build rejects mismatched minor versions",
+      "matchPackageNames": ["tauri", "tauri-build", "tauri-plugin-*", "@tauri-apps/**"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "tauri"
+    },
+    {
+      "description": "Actions share one PR",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "Dev tools share one PR; the Rust toolchain stays separate because new releases bring new lints",
+      "matchManagers": ["mise"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchPackageNames": ["!rust"],
+      "groupName": "mise tools"
+    },
+    {
+      "description": "The mise version pinned in CI updates with the other dev tools",
+      "matchPackageNames": ["jdx/mise"],
+      "groupName": "mise tools"
+    },
+    {
+      "description": "What ships in the app gets the deps type, which release-please lists under Dependencies",
+      "matchManagers": ["cargo", "npm"],
+      "semanticCommitType": "deps",
+      "semanticCommitScope": null
+    },
+    {
+      "matchManagers": ["mise"],
+      "matchPackageNames": ["rust"],
+      "semanticCommitType": "deps",
+      "semanticCommitScope": null
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "description": "Security updates are listed under Bug Fixes",
+    "semanticCommitType": "fix",
+    "semanticCommitScope": "deps"
+  }
+}
