@@ -5,7 +5,7 @@ resolver = "3"
 [profile.release]
 strip = true
 opt-level = 3
-lto = true
+lto = "thin"
 
 # OCR is unusably slow unoptimized; keep it fast in debug builds too.
 [profile.dev.package.rten]
