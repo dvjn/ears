@@ -8,7 +8,7 @@ on:
 
 env:
   # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-  MISE_VERSION: 2026.11.0
+  MISE_VERSION: 2026.11.3
 
 jobs:
   release:
