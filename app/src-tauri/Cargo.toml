@@ -28,7 +28,7 @@ anyhow = "1"
 enigo = "0.6"
 image = "0.25.10"
 ocrs = "0.13.0"
-rten = "0.26.0"
+rten = "0.28.0"
 tokio-tungstenite = "0.30"
 futures-util = "0.3"
 
