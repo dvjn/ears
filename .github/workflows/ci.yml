@@ -13,7 +13,7 @@ concurrency:
 
 env:
   # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
-  MISE_VERSION: 2026.11.0
+  MISE_VERSION: 2026.11.8
 
 jobs:
   # Linux also runs the lints: clippy compiles everything cargo check does, so a
