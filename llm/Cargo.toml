@@ -16,7 +16,7 @@ tokio = { version = "1", features = ["full"] }
 toml = "1"
 
 [build-dependencies]
-bindgen = "0.72"
+bindgen = "0.73"
 cmake = "0.1"
 
 [features]
