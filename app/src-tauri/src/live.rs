@@ -264,6 +264,14 @@ impl LiveSession {
             && self.last_activity.lock().unwrap().elapsed() >= timeout
     }
 
+    /// How long no voiced audio has arrived, once speech has been heard.
+    pub fn quiet_for(&self) -> Duration {
+        if !self.had_speech.load(Ordering::Acquire) {
+            return Duration::ZERO;
+        }
+        self.last_activity.lock().unwrap().elapsed()
+    }
+
     /// Unique per session, so a watcher can tell its session from a newer one.
     pub fn id(&self) -> u64 {
         self.id
