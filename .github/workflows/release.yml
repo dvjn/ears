@@ -187,11 +187,11 @@ jobs:
         run: |
           version="${TAG#v}"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --dir packaging/ears-bin --pattern "ears_${version}_amd64.deb"
-          cp LICENSE "packaging/ears-bin/LICENSE-$version"
+            --dir packaging/ears --pattern "ears_${version}_amd64.deb"
+          cp LICENSE "packaging/ears/LICENSE-$version"
           for name in stt llm; do
             gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --dir "packaging/ears-$name-bin" --pattern "ears-$name-$version-x86_64.tar.gz"
+              --dir "packaging/ears-$name" --pattern "ears-$name-$version-x86_64.tar.gz"
           done
 
       - name: Import the signing key
@@ -206,7 +206,7 @@ jobs:
 
       - name: Build and sign the packages
         run: |
-          for pkg in ears-bin ears-stt-bin ears-llm-bin; do
+          for pkg in ears ears-stt ears-llm; do
             su builder -c "cd packaging/$pkg && makepkg --nodeps --sign --key $KEY --noconfirm"
           done
           mkdir repo

@@ -1,5 +1,5 @@
 # Maintainer: dvjn <git@dvjn.dev>
-pkgname=ears-stt-bin
+pkgname=ears-stt
 pkgver=0.4.0 # x-release-please-version
 pkgrel=1
 pkgdesc="OpenAI-compatible speech-to-text server for ears, backed by whisper.cpp"
@@ -13,10 +13,11 @@ optdepends=(
     'vulkan-radeon: Vulkan driver for AMD GPUs'
     'vulkan-intel: Vulkan driver for Intel GPUs'
 )
-provides=('ears-stt')
-conflicts=('ears-stt')
+# The AUR's ears-stt-bin, the name before this repository: upgrade it in place.
+replaces=('ears-stt-bin')
+conflicts=('ears-stt-bin')
 options=('!debug')
-install=ears-stt-bin.install
+install=ears-stt.install
 source=("$url/releases/download/v$pkgver/ears-stt-$pkgver-x86_64.tar.gz")
 sha256sums=('SKIP')
 

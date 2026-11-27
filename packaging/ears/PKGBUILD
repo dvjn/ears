@@ -1,5 +1,5 @@
 # Maintainer: dvjn <git@dvjn.dev>
-pkgname=ears-bin
+pkgname=ears
 pkgver=0.4.0 # x-release-please-version
 pkgrel=1
 pkgdesc="Voice dictation: press a hotkey, speak, and ears types what you said"
@@ -14,10 +14,11 @@ optdepends=(
     'ears-stt: local speech-to-text server'
     'ears-llm: local clean-up language model server'
 )
-provides=('ears')
-conflicts=('ears')
+# The AUR's ears-bin, the name before this repository: upgrade it in place.
+replaces=('ears-bin')
+conflicts=('ears-bin')
 options=('!debug')
-install=ears-bin.install
+install=ears.install
 source=("ears_${pkgver}_amd64.deb::$url/releases/download/v$pkgver/ears_${pkgver}_amd64.deb"
         "LICENSE-$pkgver::https://raw.githubusercontent.com/dvjn/ears/v$pkgver/LICENSE")
 sha256sums=('SKIP' 'SKIP')

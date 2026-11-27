@@ -1,5 +1,5 @@
 # Maintainer: dvjn <git@dvjn.dev>
-pkgname=ears-llm-bin
+pkgname=ears-llm
 pkgver=0.4.0 # x-release-please-version
 pkgrel=1
 pkgdesc="OpenAI-compatible transcript clean-up server for ears, backed by llama.cpp"
@@ -13,10 +13,11 @@ optdepends=(
     'vulkan-radeon: Vulkan driver for AMD GPUs'
     'vulkan-intel: Vulkan driver for Intel GPUs'
 )
-provides=('ears-llm')
-conflicts=('ears-llm')
+# The AUR's ears-llm-bin, the name before this repository: upgrade it in place.
+replaces=('ears-llm-bin')
+conflicts=('ears-llm-bin')
 options=('!debug')
-install=ears-llm-bin.install
+install=ears-llm.install
 source=("$url/releases/download/v$pkgver/ears-llm-$pkgver-x86_64.tar.gz")
 sha256sums=('SKIP')
 
