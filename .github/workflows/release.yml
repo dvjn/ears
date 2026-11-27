@@ -70,21 +70,29 @@ jobs:
           args: ${{ matrix.args }}
 
   servers:
-    # ears-stt and ears-llm link Arch's whisper.cpp and llama.cpp, so they are
-    # built on Arch. built-with.txt records the versions the AUR -bin
-    # packages pin.
+    # ears-stt and ears-llm build whisper.cpp and llama.cpp (submodules in
+    # vendor/) statically with the Vulkan backend, so the binaries need only
+    # glibc, libstdc++ and the Vulkan loader.
     permissions:
       contents: write
-    runs-on: ubuntu-latest
-    container: archlinux:latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Install dependencies
-        run: pacman -Syu --noconfirm --needed git git-lfs base-devel clang rustup github-cli whisper-cpp llama-cpp
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
 
-      - name: Setup rust
-        run: rustup default stable
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libvulkan-dev glslc spirv-headers
+
+      - name: Setup toolchain (rust, cmake)
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: rust cmake
+          cache: true
 
       - name: Build
         run: cargo build --release --locked -p ears-stt -p ears-llm
@@ -92,12 +100,11 @@ jobs:
       - name: Package
         run: |
           version="${GITHUB_REF_NAME#v}"
-          pacman -Q whisper-cpp llama-cpp ggml > built-with.txt
           for name in stt llm; do
             dir="ears-$name-$version-x86_64"
             mkdir "$dir"
             cp "target/release/ears-$name" "$name/systemd/ears-$name.service" \
-              "$name/env.example" "$name/README.md" LICENSE built-with.txt "$dir/"
+              "$name/env.example" "$name/README.md" LICENSE "$dir/"
             if [ "$name" = llm ]; then cp llm/models.toml "$dir/"; fi
             tar -czf "$dir.tar.gz" "$dir"
           done
@@ -105,5 +112,4 @@ jobs:
       - name: Upload to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" ears-*-x86_64.tar.gz built-with.txt --repo "$GITHUB_REPOSITORY" --clobber
-
+        run: gh release upload "$GITHUB_REF_NAME" ears-*-x86_64.tar.gz --repo "$GITHUB_REPOSITORY" --clobber

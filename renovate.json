@@ -10,6 +10,9 @@
   "semanticCommits": "enabled",
   "dependencyDashboard": true,
   "osvVulnerabilityAlerts": true,
+  "git-submodules": {
+    "enabled": true
+  },
   "packageRules": [
     {
       "description": "Crate patches share one PR, which also runs cargo update so indirect crates get refreshed",
@@ -74,6 +77,13 @@
     {
       "description": "What ships in the app gets the deps type, which release-please lists under Dependencies",
       "matchManagers": ["cargo", "npm"],
+      "semanticCommitType": "deps",
+      "semanticCommitScope": null
+    },
+    {
+      "description": "whisper.cpp and llama.cpp follow their release tags (the branch in .gitmodules) and ship in the servers",
+      "matchManagers": ["git-submodules"],
+      "versioning": "semver",
       "semanticCommitType": "deps",
       "semanticCommitScope": null
     },

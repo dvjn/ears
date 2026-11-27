@@ -1,28 +1,36 @@
-// Link the system llama.cpp (and the ggml it is built on) and generate
-// bindings from its headers. GPU support comes from whichever ggml backend
-// package is installed (ggml-cuda, ggml-vulkan, ...), loaded at runtime.
+// Build the vendored llama.cpp into ears-llm and generate bindings from its
+// header. See vendor/ggml.rs.
+
+#[path = "../vendor/ggml.rs"]
+mod ggml;
+
+use std::path::{Path, PathBuf};
 
 fn main() {
-    let llama = pkg_config::Config::new()
-        .probe("llama")
-        .expect("llama.cpp not found via pkg-config (install llama-cpp)");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../vendor/llama.cpp");
+    let includes = ggml::build(
+        &src,
+        "llama",
+        &[
+            ("LLAMA_BUILD_COMMON", "OFF"),
+            ("LLAMA_BUILD_TESTS", "OFF"),
+            ("LLAMA_BUILD_TOOLS", "OFF"),
+            ("LLAMA_BUILD_EXAMPLES", "OFF"),
+            ("LLAMA_BUILD_SERVER", "OFF"),
+            ("LLAMA_BUILD_APP", "OFF"),
+            ("LLAMA_OPENSSL", "OFF"),
+        ],
+    );
 
-    println!("cargo:rerun-if-changed=src/llama.h");
     let bindings = bindgen::Builder::default()
-        .header("src/llama.h")
-        .clang_args(
-            llama
-                .include_paths
-                .iter()
-                .map(|p| format!("-I{}", p.display())),
-        )
+        .header(src.join("include/llama.h").to_string_lossy())
+        .clang_args(includes.iter().map(|p| format!("-I{}", p.display())))
         .allowlist_function("llama_.*")
-        .allowlist_function("ggml_backend_load_all")
         .allowlist_type("llama_.*")
         .generate()
         .expect("failed to generate llama.cpp bindings");
 
-    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     bindings
         .write_to_file(out.join("bindings.rs"))
         .expect("failed to write bindings");

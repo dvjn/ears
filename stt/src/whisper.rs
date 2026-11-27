@@ -3,7 +3,7 @@
 use anyhow::{anyhow, Result};
 use std::ffi::{CStr, CString};
 use std::path::Path;
-use std::sync::{Mutex, Once};
+use std::sync::Mutex;
 
 #[allow(
     non_camel_case_types,
@@ -52,18 +52,11 @@ pub struct Model {
 unsafe impl Send for Model {}
 unsafe impl Sync for Model {}
 
-/// Load the installed ggml backends (CUDA, Vulkan, CPU variants) once.
-fn load_backends() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| unsafe { ffi::ggml_backend_load_all() });
-}
-
 impl Model {
     /// `size` is the model size without the "whisper-" prefix or a quant
     /// suffix (e.g. "small.en"); it selects the alignment heads used for DTW
     /// word timestamps, which streaming relies on.
     pub fn load(path: &Path, size: &str, vad_model: Option<&Path>, use_gpu: bool) -> Result<Model> {
-        load_backends();
         let cpath = CString::new(path.to_string_lossy().as_bytes())?;
         unsafe {
             let mut params = ffi::whisper_context_default_params();

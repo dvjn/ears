@@ -35,7 +35,7 @@ it, or skip them and use a hosted api.
 ## install
 
 on arch, from the aur: `ears-bin`, and on the gpu machine `ears-stt-bin` and
-`ears-llm-bin` plus a ggml backend (`ggml-cuda` or `ggml-vulkan`). other
+`ears-llm-bin` (they use the gpu through vulkan). other
 platforms: download the app from the
 [releases](https://github.com/dvjn/ears/releases) page.
 
@@ -86,9 +86,10 @@ and then asks you to reconnect it or pick another one.
 ## develop
 
 ```sh
-mise install                      # rust, node, pnpm
+git submodule update --init      # whisper.cpp, llama.cpp
+mise install                      # rust, node, pnpm, cmake
 cd app && pnpm install && pnpm tauri dev
-cargo test --workspace            # needs whisper-cpp for ears-stt
+cargo test --workspace            # the servers need the vulkan headers, see stt/README.md
 ```
 
 ## license

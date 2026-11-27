@@ -17,13 +17,12 @@ mod ffi {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-/// Load the installed ggml backends (CUDA, Vulkan, CPU variants) once, and
-/// keep llama.cpp's logging to warnings and errors.
+/// Initialize llama.cpp once, keeping its logging to warnings and errors. The
+/// ggml backends are linked in statically, so there is nothing to load.
 fn init() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| unsafe {
         ffi::llama_log_set(Some(log), std::ptr::null_mut());
-        ffi::ggml_backend_load_all();
         ffi::llama_backend_init();
     });
 }
