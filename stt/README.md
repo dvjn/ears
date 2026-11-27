@@ -13,7 +13,7 @@ and Intel cards alike.
 ## run
 
 On Arch, install `ears-stt` from the
-[`[ears]` repository](../README.md#the-ears-pacman-repository):
+`[ears]` repository (see [the servers](../README.md#the-servers) to add it):
 
 ```sh
 sudo pacman -Syu ears-stt
@@ -42,8 +42,9 @@ Settings are environment variables in `~/.config/ears-stt/env`, described in
 [env.example](env.example).
 
 - The server listens on `127.0.0.1:13278`. To serve other machines, set
-  `EARS_STT_HOST` to a LAN or Tailscale address and set `EARS_STT_API_KEY`;
-  it refuses to listen on a non-loopback address without an api key.
+  `EARS_STT_HOST` to a LAN or Tailscale address and `EARS_STT_API_KEY` to a
+  secret of your choice (`openssl rand -hex 32`); the apps send the same key.
+  The server refuses to listen on a non-loopback address without one.
 - `EARS_STT_MODEL` is the model loaded at startup (default
   `whisper-medium.en`). A request may name any id from `GET /v1/models`.
 - Models are downloaded from Hugging Face on first use, so the first start

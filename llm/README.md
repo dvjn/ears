@@ -14,7 +14,7 @@ and Intel cards alike.
 ## run
 
 On Arch, install `ears-llm` from the
-[`[ears]` repository](../README.md#the-ears-pacman-repository):
+`[ears]` repository (see [the servers](../README.md#the-servers) to add it):
 
 ```sh
 sudo pacman -Syu ears-llm
@@ -43,8 +43,9 @@ Settings are environment variables in `~/.config/ears-llm/env`, described in
 [env.example](env.example).
 
 - The server listens on `127.0.0.1:13279`. To serve other machines, set
-  `EARS_LLM_HOST` to a LAN or Tailscale address and set `EARS_LLM_API_KEY`;
-  it refuses to listen on a non-loopback address without an api key.
+  `EARS_LLM_HOST` to a LAN or Tailscale address and `EARS_LLM_API_KEY` to a
+  secret of your choice (`openssl rand -hex 32`); the apps send the same key.
+  The server refuses to listen on a non-loopback address without one.
 - The first start downloads the default model, so it takes a while. Models
   are stored in `$XDG_DATA_HOME/ears-llm/models` (default
   `~/.local/share/ears-llm/models`).
