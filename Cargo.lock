@@ -158,20 +158,6 @@ dependencies = [
 
 [[package]]
 name = "ashpd"
-version = "0.13.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb8421aaa9644a5faf26735f258b669b15f063313ef8f8e2bdb28912a1a6f111"
-dependencies = [
- "enumflags2",
- "futures-util",
- "getrandom 0.4.3",
- "serde",
- "serde_repr",
- "zbus 5.19.0",
-]
-
-[[package]]
-name = "ashpd"
 version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b60a01f4fbcba6a522ec4d285893bd0ce36f5987a8b3bf636e6aeb2d2acdf8ac"
@@ -1516,7 +1502,7 @@ name = "ears"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "ashpd 0.13.13",
+ "ashpd",
  "cpal",
  "enigo",
  "futures-util",
@@ -7730,7 +7716,7 @@ version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e833d39f662982a09608f2550fd4036725f98d78738e40fa7206a26258b06384"
 dependencies = [
- "ashpd 0.14.3",
+ "ashpd",
  "dispatch2",
  "image",
  "libwayshot-xcap",

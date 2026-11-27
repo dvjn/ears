@@ -37,7 +37,7 @@ enigo = { version = "0.6", features = ["wayland", "x11rb"] }
 # Screen capture through the desktop's screenshot portal (works on Wayland).
 # async-io, not the default tokio: tokio mode would leak into the zbus that
 # the notification plugin uses blocking, and panic inside the runtime.
-ashpd = { version = "0.13", default-features = false, features = ["async-io", "screenshot"] }
+ashpd = { version = "0.14", default-features = false, features = ["async-io", "screenshot"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 xcap = "0.9.6"
