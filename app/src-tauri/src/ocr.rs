@@ -58,7 +58,7 @@ fn run_ocr(rgb: image::RgbImage, detection: &Path, recognition: &Path) -> Result
 
     let source = ImageSource::from_bytes(rgb.as_raw(), (w, h))?;
     let input = engine.prepare_input(source)?;
-    engine.get_text(&input)
+    Ok(engine.get_text(&input)?)
 }
 
 #[cfg(target_os = "linux")]
