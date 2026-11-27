@@ -1,17 +1,58 @@
 name: release
 
-# release-please publishes the release, with its notes; this builds the
-# assets and uploads them to it.
+# release-please creates the release as a draft, with its notes, and calls
+# this workflow. It builds every asset, uploads them to the draft, adds the
+# pacman repository, and only then publishes the release. Until that last
+# step, "latest" (and so the pacman repository) stays on the previous,
+# complete release; a failed build leaves the draft unpublished.
+#
+# Re-run a release by hand with workflow_dispatch and its tag.
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. v0.5.0
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
 
 env:
   # renovate: datasource=github-releases depName=jdx/mise extractVersion=^v(?<version>.+)$
   MISE_VERSION: 2026.11.14
 
 jobs:
+  draft:
+    # The draft's id: tauri-action uploads by id, and drafts have no public
+    # tag URL to look them up by.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      id: ${{ steps.find.outputs.id }}
+    steps:
+      - id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [ -z "$id" ]; then echo "no release for $TAG" >&2; exit 1; fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: draft
     permissions:
       contents: write
     strategy:
@@ -31,6 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ inputs.tag }}
           lfs: true
 
       - name: Install Linux dependencies
@@ -63,13 +105,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: app
-          # Upload to the release that triggered this run. Without the id, v1
-          # rewrites the release's name and body, wiping release-please's notes.
-          releaseId: ${{ github.event.release.id }}
-          tagName: ${{ github.ref_name }}
+          # Upload to the draft. Without the id, v1 rewrites the release's
+          # name and body, wiping release-please's notes.
+          releaseId: ${{ needs.draft.outputs.id }}
+          tagName: ${{ inputs.tag }}
           args: ${{ matrix.args }}
 
   servers:
+    needs: draft
     # ears-stt and ears-llm build whisper.cpp and llama.cpp (submodules in
     # vendor/) statically with the Vulkan backend, so the binaries need only
     # glibc, libstdc++ and the Vulkan loader.
@@ -79,6 +122,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ inputs.tag }}
           submodules: true
 
       - name: Install dependencies
@@ -98,8 +142,10 @@ jobs:
         run: cargo build --release --locked -p ears-stt -p ears-llm
 
       - name: Package
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           for name in stt llm; do
             dir="ears-$name-$version-x86_64"
             mkdir "$dir"
@@ -112,4 +158,91 @@ jobs:
       - name: Upload to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" ears-*-x86_64.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+          TAG: ${{ inputs.tag }}
+        run: gh release upload "$TAG" ears-*-x86_64.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+
+  pacman-repo:
+    # Arch packages built from packaging/*/PKGBUILD, plus a signed repository
+    # database. pacman reads the latest release as the [ears] repository:
+    #   Server = https://github.com/dvjn/ears/releases/latest/download
+    needs: [release, servers]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed github-cli
+
+      - name: Fetch the release assets
+        # A draft's downloads need a token, so place the sources where makepkg
+        # finds them instead of letting it download.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          version="${TAG#v}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir packaging/ears-bin --pattern "ears_${version}_amd64.deb"
+          cp LICENSE "packaging/ears-bin/LICENSE-$version"
+          for name in stt llm; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --dir "packaging/ears-$name-bin" --pattern "ears-$name-$version-x86_64.tar.gz"
+          done
+
+      - name: Import the signing key
+        env:
+          PACMAN_SIGNING_KEY: ${{ secrets.PACMAN_SIGNING_KEY }}
+        run: |
+          useradd -m builder
+          chown -R builder packaging
+          printf '%s\n' "$PACMAN_SIGNING_KEY" | su builder -c 'gpg --batch --import'
+          key=$(su builder -c 'gpg --list-secret-keys --with-colons' | awk -F: '/^fpr/ {print $10; exit}')
+          echo "KEY=$key" >> "$GITHUB_ENV"
+
+      - name: Build and sign the packages
+        run: |
+          for pkg in ears-bin ears-stt-bin ears-llm-bin; do
+            su builder -c "cd packaging/$pkg && makepkg --nodeps --sign --key $KEY --noconfirm"
+          done
+          mkdir repo
+          mv packaging/*/*.pkg.tar.zst packaging/*/*.pkg.tar.zst.sig repo/
+          chown -R builder repo
+          su builder -c "cd repo && repo-add --sign --key $KEY ears.db.tar.gz *.pkg.tar.zst"
+          # repo-add links ears.db to ears.db.tar.gz, but release assets can't
+          # be symlinks: replace the links with copies under the names pacman
+          # asks for.
+          cd repo
+          for f in db files; do
+            cp --remove-destination "ears.$f.tar.gz" "ears.$f"
+            cp --remove-destination "ears.$f.tar.gz.sig" "ears.$f.sig"
+          done
+          su builder -c "gpg --armor --export $KEY" > ears.gpg
+
+      - name: Upload to the release
+        # The database last, so it never lists a package that isn't there yet.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        working-directory: repo
+        run: |
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            *.pkg.tar.zst *.pkg.tar.zst.sig ears.gpg
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            ears.db ears.db.sig ears.files ears.files.sig
+
+  publish:
+    # Everything is uploaded: publish, which also makes this the latest release.
+    needs: [release, servers, pacman-repo]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
