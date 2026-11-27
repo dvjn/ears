@@ -19,9 +19,9 @@
         },
         { "type": "json", "path": "app/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "app/src-tauri/tauri.conf.json", "jsonpath": "$.version" },
-        { "type": "generic", "path": "packaging/ears-bin/PKGBUILD" },
-        { "type": "generic", "path": "packaging/ears-stt-bin/PKGBUILD" },
-        { "type": "generic", "path": "packaging/ears-llm-bin/PKGBUILD" }
+        { "type": "generic", "path": "packaging/ears/PKGBUILD" },
+        { "type": "generic", "path": "packaging/ears-stt/PKGBUILD" },
+        { "type": "generic", "path": "packaging/ears-llm/PKGBUILD" }
       ]
     }
   },
