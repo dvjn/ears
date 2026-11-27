@@ -41,7 +41,7 @@ jobs:
             patchelf
 
       - name: Setup toolchain (rust, node, pnpm)
-        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+        uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
         with:
           version: ${{ env.MISE_VERSION }}
           cache: true
@@ -84,7 +84,7 @@ jobs:
             libvulkan-dev glslc spirv-headers
 
       - name: Setup toolchain (rust, cmake)
-        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+        uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
         with:
           version: ${{ env.MISE_VERSION }}
           install_args: rust cmake
