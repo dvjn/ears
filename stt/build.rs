@@ -1,29 +1,32 @@
-// Link the system whisper.cpp (and the ggml it is built on) and generate
-// bindings from its headers. GPU support comes from whichever ggml backend
-// package is installed (ggml-cuda, ggml-vulkan, ...), loaded at runtime.
+// Build the vendored whisper.cpp into ears-stt and generate bindings from its
+// header. See vendor/ggml.rs.
+
+#[path = "../vendor/ggml.rs"]
+mod ggml;
+
+use std::path::{Path, PathBuf};
 
 fn main() {
-    let whisper = pkg_config::Config::new()
-        .atleast_version("1.7.6")
-        .probe("whisper")
-        .expect("whisper.cpp not found via pkg-config (install whisper-cpp)");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../vendor/whisper.cpp");
+    let includes = ggml::build(
+        &src,
+        "whisper",
+        &[
+            ("WHISPER_BUILD_TESTS", "OFF"),
+            ("WHISPER_BUILD_EXAMPLES", "OFF"),
+            ("WHISPER_BUILD_SERVER", "OFF"),
+        ],
+    );
 
-    println!("cargo:rerun-if-changed=src/whisper.h");
     let bindings = bindgen::Builder::default()
-        .header("src/whisper.h")
-        .clang_args(
-            whisper
-                .include_paths
-                .iter()
-                .map(|p| format!("-I{}", p.display())),
-        )
+        .header(src.join("include/whisper.h").to_string_lossy())
+        .clang_args(includes.iter().map(|p| format!("-I{}", p.display())))
         .allowlist_function("whisper_.*")
-        .allowlist_function("ggml_backend_load_all")
         .allowlist_type("whisper_.*")
         .generate()
         .expect("failed to generate whisper.cpp bindings");
 
-    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     bindings
         .write_to_file(out.join("bindings.rs"))
         .expect("failed to write bindings");

@@ -1,0 +1,10 @@
+[submodule "vendor/whisper.cpp"]
+	path = vendor/whisper.cpp
+	url = https://github.com/ggml-org/whisper.cpp
+	branch = v1.9.6
+	shallow = true
+[submodule "vendor/llama.cpp"]
+	path = vendor/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp
+	branch = v1.1.0
+	shallow = true

@@ -6,13 +6,12 @@ pkgdesc="OpenAI-compatible speech-to-text server for ears, backed by whisper.cpp
 arch=('x86_64')
 url="https://github.com/dvjn/ears"
 license=('MIT')
-# Built against these exact versions (see built-with.txt in the release):
-# whisper.cpp's C structs change between releases without a soname bump, so
-# a newer whisper-cpp waits for the next ears-stt release.
-depends=('whisper-cpp=1.9.5' 'ggml=0.26.0' 'ffmpeg' 'gcc-libs' 'glibc')
+# whisper.cpp and ggml are built in statically; the GPU is used through Vulkan.
+depends=('vulkan-icd-loader' 'ffmpeg' 'gcc-libs' 'glibc')
 optdepends=(
-    'ggml-cuda: NVIDIA GPU acceleration'
-    'ggml-vulkan: Vulkan GPU acceleration'
+    'nvidia-utils: Vulkan driver for NVIDIA GPUs'
+    'vulkan-radeon: Vulkan driver for AMD GPUs'
+    'vulkan-intel: Vulkan driver for Intel GPUs'
 )
 provides=('ears-stt')
 conflicts=('ears-stt')

@@ -17,4 +17,9 @@ toml = "1"
 
 [build-dependencies]
 bindgen = "0.72"
-pkg-config = "0.3"
+cmake = "0.1"
+
+[features]
+# GPU acceleration through Vulkan (NVIDIA, AMD, Intel); see vendor/ggml.rs.
+default = ["vulkan"]
+vulkan = []

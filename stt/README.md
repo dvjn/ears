@@ -1,9 +1,9 @@
 # ears-stt
 
-OpenAI-compatible speech-to-text server for [ears](../README.md). It links
-the system [whisper.cpp](https://github.com/ggml-org/whisper.cpp); GPU support
-comes from whichever ggml backend package is installed (`ggml-cuda`,
-`ggml-vulkan`, ...), so nothing is compiled per GPU.
+OpenAI-compatible speech-to-text server for [ears](../README.md). It builds
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp) (a git submodule in
+`vendor/`) in statically, so it doesn't depend on the system's whisper.cpp or
+ggml. GPU support is Vulkan, for NVIDIA, AMD and Intel cards alike.
 
 ## endpoints
 
@@ -33,8 +33,11 @@ without an api key. Models are downloaded from Hugging Face on first use.
 
 ## develop
 
-Needs `whisper-cpp` (headers and library, found with pkg-config) and clang
-for bindgen.
+Needs cmake (from `mise install`), clang for bindgen, and the Vulkan
+headers, loader, SPIR-V headers and glslc (Arch: `vulkan-headers
+vulkan-icd-loader spirv-headers shaderc`). Without them, build CPU-only with
+`--no-default-features`. Set `EARS_GGML_NATIVE=1` to tune the CPU code for
+the build machine instead of x86-64-v3.
 
 ```sh
 cargo run -p ears-stt

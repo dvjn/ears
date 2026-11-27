@@ -69,18 +69,35 @@ jobs:
         run: cargo check --manifest-path app/src-tauri/Cargo.toml --all-targets
 
   servers:
-    # ears-stt and ears-llm link the system whisper.cpp and llama.cpp, which
-    # Arch packages with pkg-config metadata.
-    runs-on: ubuntu-latest
-    container: archlinux:latest
+    # The servers build whisper.cpp and llama.cpp from the submodules in
+    # vendor/, with the Vulkan backend.
+    runs-on: ubuntu-24.04
     steps:
-      - name: Install dependencies
-        run: pacman -Syu --noconfirm --needed git git-lfs base-devel clang rustup whisper-cpp llama-cpp
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
 
-      - name: Setup rust
-        run: rustup default stable && rustup component add clippy
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libvulkan-dev glslc spirv-headers
+
+      - name: Setup toolchain (rust, cmake)
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: rust cmake
+          cache: true
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: servers
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Add clippy
+        run: rustup component add clippy
 
       - name: clippy
         run: cargo clippy -p ears-stt -p ears-llm --all-targets -- -D warnings

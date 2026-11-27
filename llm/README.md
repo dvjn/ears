@@ -1,9 +1,10 @@
 # ears-llm
 
 OpenAI-compatible chat server that cleans up [ears](../README.md)
-transcripts. It links the system [llama.cpp](https://github.com/ggml-org/llama.cpp)
-library; GPU support comes from whichever ggml backend package is installed
-(`ggml-cuda`, `ggml-vulkan`, ...). Models are listed in
+transcripts. It builds [llama.cpp](https://github.com/ggml-org/llama.cpp)
+(a git submodule in `vendor/`) in statically, so it doesn't depend on the
+system's llama.cpp or ggml. GPU support is Vulkan, for NVIDIA, AMD and Intel
+cards alike. Models are listed in
 [models.toml](models.toml) and loaded one at a time.
 
 ## endpoints
@@ -27,7 +28,7 @@ library; GPU support comes from whichever ggml backend package is installed
 | `qwen3.5-0.8b` | general | 1.2 GB |
 | `speakoflow-mini` | cleanup | 1.5 GB |
 
-VRAM measured on an RTX 3060 Ti at 4k context, including CUDA overhead.
+VRAM measured on an RTX 3060 Ti at 4k context, including GPU runtime overhead.
 To change the set, copy `models.toml` to `~/.config/ears-llm/models.toml`:
 each model is a Hugging Face `repo` and `file` (or a local `path`), with an
 optional `kind`, `system_prompt` (required for cleanup models),
@@ -46,8 +47,11 @@ without an api key.
 
 ## develop
 
-Needs `llama-cpp` (headers and library, found with pkg-config) and clang for
-bindgen.
+Needs cmake (from `mise install`), clang for bindgen, and the Vulkan
+headers, loader, SPIR-V headers and glslc (Arch: `vulkan-headers
+vulkan-icd-loader spirv-headers shaderc`). Without them, build CPU-only with
+`--no-default-features`. Set `EARS_GGML_NATIVE=1` to tune the CPU code for
+the build machine instead of x86-64-v3.
 
 ```sh
 EARS_LLM_MODELS=llm/models.toml cargo run -p ears-llm
