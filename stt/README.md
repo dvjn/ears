@@ -22,6 +22,11 @@ ggml. GPU support is Vulkan, for NVIDIA, AMD and Intel cards alike.
 
 ## run
 
+Released for Linux x86_64 only, as a static binary that uses the GPU through
+Vulkan (`ears-stt-bin` on the AUR, or the `ears-stt-*-x86_64.tar.gz` release
+asset). The app on any OS can use it over the network. Models are stored in
+`$XDG_DATA_HOME/ears-stt/models` (default `~/.local/share/ears-stt/models`).
+
 ```sh
 install -Dm600 env.example ~/.config/ears-stt/env
 systemctl --user enable --now ears-stt

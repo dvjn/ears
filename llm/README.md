@@ -36,6 +36,11 @@ optional `kind`, `system_prompt` (required for cleanup models),
 
 ## run
 
+Released for Linux x86_64 only, as a static binary that uses the GPU through
+Vulkan (`ears-llm-bin` on the AUR, or the `ears-llm-*-x86_64.tar.gz` release
+asset). The app on any OS can use it over the network. Models are stored in
+`$XDG_DATA_HOME/ears-llm/models` (default `~/.local/share/ears-llm/models`).
+
 ```sh
 install -Dm600 env.example ~/.config/ears-llm/env
 systemctl --user enable --now ears-llm
