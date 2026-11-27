@@ -1,26 +1,28 @@
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
 
-const textEl = document.getElementById('text');
+const $ = (id) => document.getElementById(id);
+const strip = $('strip');
+const stopBtn = $('stop');
+const micBtn = $('mic');
+const pop = $('pop');
 
-// Stop button: same toggle the Record button / hotkey uses. In live mode this
-// finalizes the dictation (copy / type / history) and hides the overlay.
-document.getElementById('stop').addEventListener('click', () => {
+// Stop: the same toggle the record button and hotkey use. It finalizes the
+// dictation (copy / type / history) and hides the overlay.
+stopBtn.addEventListener('click', () => {
   invoke('cmd_toggle_recording').catch(() => {});
 });
 
-// Microphone picker: hidden behind the mic button, shown in place of the
-// transcript.
-const micBtn = document.getElementById('mic');
-const micsEl = document.getElementById('mics');
-
+// Microphone picker: a grid above the strip, in place of the captions.
 function closeMics() {
-  micsEl.hidden = true;
+  pop.hidden = true;
   micBtn.classList.remove('open');
+  micBtn.setAttribute('aria-expanded', 'false');
+  render();
 }
 
 micBtn.addEventListener('click', async () => {
-  if (!micsEl.hidden) {
+  if (!pop.hidden) {
     closeMics();
     return;
   }
@@ -30,68 +32,51 @@ micBtn.addEventListener('click', async () => {
   ]);
   const current = settings.input_device ?? '';
   const options = [['', 'System default'], ...mics.map((m) => [m.id, m.label])];
-  micsEl.replaceChildren(...options.map(([id, label]) => {
+  pop.replaceChildren(...options.map(([id, label]) => {
     const btn = document.createElement('button');
     btn.textContent = label;
     btn.title = label;
-    if (id === current) btn.className = 'current';
+    if (id === current) btn.className = 'cur';
     btn.addEventListener('click', () => {
       closeMics();
       invoke('switch_mic', { id: id || null }).catch(() => {});
     });
     return btn;
   }));
-  micsEl.hidden = false;
+  pop.hidden = false;
   micBtn.classList.add('open');
+  micBtn.setAttribute('aria-expanded', 'true');
+  render();
 });
 
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !pop.hidden) closeMics();
+});
+
+// Captions: the committed transcript, then the volatile tail in a lighter
+// colour; the box keeps the latest two lines.
 let committed = '';
 let partial = '';
 
 function render() {
-  const hasText = (committed + partial).trim().length > 0;
-  if (!hasText) {
-    textEl.textContent = '';
-    return;
-  }
-  const sep = committed && partial ? ' ' : '';
-  textEl.innerHTML =
-    `<span class="committed">${escapeHtml(committed)}</span>` +
-    `<span class="partial">${escapeHtml(sep + partial)}</span>`;
-  // Keep the most recent text in view as the paragraph grows.
-  textEl.scrollTop = textEl.scrollHeight;
+  const tail = partial === '…' ? '' : partial;
+  const has = (committed + tail).trim().length > 0;
+  $('cap').hidden = !has || !pop.hidden;
+  $('cap-c').textContent = committed;
+  $('cap-p').textContent = (committed && tail ? ' ' : '') + tail;
 }
 
-function escapeHtml(s) {
-  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-}
-
-// `live-commit` carries the full transcript so far; `live-partial` the tail.
 listen('live-commit', (e) => { committed = e.payload?.text ?? ''; render(); });
 listen('live-partial', (e) => { partial = e.payload?.text ?? ''; render(); });
 
-// Reset when a new session begins.
-listen('live-reset', () => {
-  closeMics();
-  committed = '';
-  partial = '';
-  target = 0;
-  heights.fill(0);
-  render();
-});
-
-// Voice visualizer: a few bars that follow the current mic level, animated
-// every display frame.
-const wave = document.getElementById('wave');
-const ctx = wave.getContext('2d');
-const panel = document.getElementById('panel');
-const BARS = 7;
-const BAR = 4;
-const GAP = 3;
-// Middle bars reach higher, like a voice meter.
-const PROFILE = [0.45, 0.7, 0.9, 1, 0.9, 0.7, 0.45];
-let target = 0; // latest mic level, 0..1
-const heights = new Array(BARS).fill(0);
+// Waveform history: one bar per sample of the loudest level, scrolling left.
+const BARS = 80;
+const SAMPLE_MS = 120;
+const hist = $('hist');
+const bars = Array.from({ length: BARS }, () => document.createElement('span'));
+hist.replaceChildren(...bars);
+const levels = new Array(BARS).fill(0);
+let peak = 0;
 
 // RMS to 0..1 on a log scale: -55 dB (room noise) to -15 dB (loud speech).
 function toLevel(rms) {
@@ -99,42 +84,54 @@ function toLevel(rms) {
   return Math.min(1, Math.max(0, (db + 55) / 40));
 }
 
-listen('mic-level', (e) => { target = toLevel(e.payload); });
+listen('mic-level', (e) => { peak = Math.max(peak, toLevel(e.payload)); });
 
-let last = performance.now();
-let flip = false;
-function draw(now) {
-  const dt = Math.min(0.1, (now - last) / 1000);
-  last = now;
-  const dpr = window.devicePixelRatio || 1;
-  const w = wave.clientWidth;
-  const h = wave.clientHeight;
-  if (wave.width !== w * dpr || wave.height !== h * dpr) {
-    wave.width = w * dpr;
-    wave.height = h * dpr;
-  }
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-  const t = now / 1000;
-  for (let i = 0; i < BARS; i++) {
-    // Each bar wobbles at its own rate so speech looks alive, not uniform.
-    const wobble = 0.65 + 0.35 * Math.sin(t * (7 + i * 1.7) + i * 2.1);
-    const goal = target * PROFILE[i] * wobble;
-    // Rise fast, fall slower; frame-rate independent.
-    const rate = goal > heights[i] ? 30 : 10;
-    heights[i] += (goal - heights[i]) * (1 - Math.exp(-rate * dt));
-    const bh = Math.max(BAR, heights[i] * h);
-    const x = i * (BAR + GAP);
-    ctx.beginPath();
-    ctx.roundRect(x, (h - bh) / 2, BAR, bh, BAR / 2);
-    ctx.fill();
-  }
-  // Some Wayland compositors (mango) show only the damaged part of this
-  // transparent window, so the rest of the panel flickers away. Touching the
-  // whole panel every frame makes each frame a full repaint.
-  flip = !flip;
-  panel.style.opacity = flip ? '0.999' : '1';
-  requestAnimationFrame(draw);
+let started = Date.now();
+let busy = false;
+
+function setBusy(on) {
+  busy = on;
+  strip.classList.toggle('busy', on);
+  stopBtn.disabled = on;
+  if (on) closeMics();
 }
-requestAnimationFrame(draw);
+
+function tick() {
+  if (!busy) {
+    levels.shift();
+    levels.push(peak);
+    peak = 0;
+    bars.forEach((b, i) => { b.style.height = `${Math.round(3 + levels[i] * 29)}px`; });
+    const secs = Math.floor((Date.now() - started) / 1000);
+    $('tm').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  }
+}
+setInterval(tick, SAMPLE_MS);
+
+// A new session: clear everything and restart the clock.
+listen('live-reset', () => {
+  committed = '';
+  partial = '';
+  levels.fill(0);
+  peak = 0;
+  started = Date.now();
+  setBusy(false);
+  closeMics();
+});
+
+listen('recording-state-changed', (e) => {
+  if (e.payload === 'recording') setBusy(false);
+  else if (e.payload === 'transcribing' || e.payload === 'cleaning') setBusy(true);
+});
+
+// Some Wayland compositors (mango) show only the damaged part of this
+// transparent window, so the rest flickers away. Touching the whole root
+// every frame makes each frame a full repaint.
+const root = $('root');
+let flip = false;
+function repaint() {
+  flip = !flip;
+  root.style.opacity = flip ? '0.999' : '1';
+  requestAnimationFrame(repaint);
+}
+requestAnimationFrame(repaint);

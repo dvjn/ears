@@ -23,15 +23,21 @@ impl Role {
     }
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize)]
 pub struct ProviderStatus {
-    /// One line for the UI, e.g. "ears-stt 0.2.0 · default whisper-medium.en".
-    pub message: String,
+    /// What the server turned out to be.
+    pub kind: ProviderKind,
     pub models: Vec<String>,
     /// ears-stt's live transcription websocket is available.
     pub streaming: bool,
     /// Listed models that are cleanup-tuned (fixed prompt, no screen context).
     pub cleanup_models: Vec<String>,
+}
+
+/// The host (and port) of a base URL, for messages.
+pub fn host(base_url: &str) -> &str {
+    let rest = base_url.split_once("://").map_or(base_url, |(_, r)| r);
+    rest.split('/').next().unwrap_or(rest)
 }
 
 /// The server root of an OpenAI-style base URL (".../v1" -> "...").
@@ -84,18 +90,28 @@ pub async fn list_models(
     base_url: &str,
     api_key: &str,
 ) -> Result<(Vec<String>, Vec<String>), String> {
-    let json: serde_json::Value = http_client()
+    let resp = http_client()
         .get(format!("{}/models", base_url.trim_end_matches('/')))
         .bearer_auth(api_key)
         .timeout(Duration::from_secs(10))
         .send()
         .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| unreachable(base_url, &e))?;
+    let code = resp.status();
+    if code == reqwest::StatusCode::UNAUTHORIZED || code == reqwest::StatusCode::FORBIDDEN {
+        return Err(if api_key.is_empty() {
+            "This server needs an API key".to_string()
+        } else {
+            "The server rejected the API key".to_string()
+        });
+    }
+    if !code.is_success() {
+        return Err(format!("{} answered {code}", host(base_url)));
+    }
+    let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| "This is not an OpenAI-compatible server".to_string())?;
     let data = json["data"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
     let all: Vec<String> = data
         .iter()
@@ -120,52 +136,67 @@ pub async fn list_models(
     Ok((models, cleanup))
 }
 
-/// Check that a provider is reachable and authorized, and describe it.
-pub async fn check(
-    kind: ProviderKind,
-    role: Role,
-    base_url: &str,
-    api_key: &str,
-) -> Result<ProviderStatus, String> {
-    validate_base_url(base_url)?;
-    let mut status = ProviderStatus::default();
+fn unreachable(base_url: &str, e: &reqwest::Error) -> String {
+    if e.is_timeout() {
+        format!("{} did not answer in time", host(base_url))
+    } else {
+        format!("Can't reach {}", host(base_url))
+    }
+}
 
-    if kind == ProviderKind::Ears {
-        let service = match role {
-            Role::Stt => "ears-stt",
-            Role::Llm => "ears-llm",
-        };
-        let health: serde_json::Value = http_client()
-            .get(format!("{}/health", root(base_url)))
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await
-            .map_err(|e| format!("can't reach {service}: {e}"))?
-            .json()
-            .await
-            .map_err(|_| format!("not an {service} server"))?;
-        if health["service"] != service {
-            return Err(format!("not an {service} server"));
+/// What `/health` says the server is: an ears service, or (no ears health
+/// endpoint) some other OpenAI-compatible API.
+enum Health {
+    Ears { service: String, streaming: bool },
+    Other,
+}
+
+async fn health(base_url: &str) -> Result<Health, String> {
+    let resp = http_client()
+        .get(format!("{}/health", root(base_url)))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(|e| unreachable(base_url, &e))?;
+    let Ok(json) = resp.json::<serde_json::Value>().await else {
+        return Ok(Health::Other);
+    };
+    match json["service"].as_str() {
+        Some(service) if service.starts_with("ears-") => Ok(Health::Ears {
+            service: service.to_string(),
+            streaming: json["streaming"].as_bool().unwrap_or(false),
+        }),
+        _ => Ok(Health::Other),
+    }
+}
+
+/// Check that a server is reachable and authorized, detect whether it is an
+/// ears service, and list its models for the role.
+pub async fn check(role: Role, base_url: &str, api_key: &str) -> Result<ProviderStatus, String> {
+    validate_base_url(base_url).map_err(|_| "Enter an http:// or https:// URL".to_string())?;
+    let (kind, streaming) = match health(base_url).await? {
+        Health::Ears { service, streaming } => {
+            let want = match role {
+                Role::Stt => "ears-stt",
+                Role::Llm => "ears-llm",
+            };
+            if service != want {
+                return Err(match role {
+                    Role::Stt => "This server can't transcribe speech".to_string(),
+                    Role::Llm => "This server can't clean up text".to_string(),
+                });
+            }
+            (ProviderKind::Ears, streaming)
         }
-        let version = health["version"].as_str().unwrap_or("?");
-        status.streaming = health["streaming"].as_bool().unwrap_or(false);
-        status.message = match role {
-            Role::Stt => format!(
-                "{service} {version} · default {}",
-                health["model"].as_str().unwrap_or("?")
-            ),
-            Role::Llm => format!(
-                "{service} {version} · loaded {}",
-                health["loaded"].as_str().unwrap_or("none")
-            ),
-        };
-    }
-
-    (status.models, status.cleanup_models) = list_models(kind, role, base_url, api_key).await?;
-    if status.message.is_empty() {
-        status.message = format!("connected · {} models", status.models.len());
-    }
-    Ok(status)
+        Health::Other => (ProviderKind::Openai, false),
+    };
+    let (models, cleanup_models) = list_models(kind, role, base_url, api_key).await?;
+    Ok(ProviderStatus {
+        kind,
+        models,
+        streaming,
+        cleanup_models,
+    })
 }
 
 #[cfg(test)]
@@ -182,6 +213,12 @@ mod tests {
             stream_url("https://gpu.example/v1/"),
             "wss://gpu.example/v1/audio/transcriptions/stream"
         );
+    }
+
+    #[test]
+    fn host_of_url() {
+        assert_eq!(host("http://localhost:13278/v1"), "localhost:13278");
+        assert_eq!(host("https://api.openai.com"), "api.openai.com");
     }
 
     #[test]

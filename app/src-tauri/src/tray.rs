@@ -9,6 +9,19 @@ use crate::commands::toggle_recording;
 
 pub const TRAY_ID: &str = "ears-tray";
 
+// macOS tints a template image to suit the menu bar, so it gets the
+// black-on-clear mark; elsewhere the mark is drawn in a neutral grey with a
+// red dot while recording.
+#[cfg(target_os = "macos")]
+const IDLE_ICON: &[u8] = include_bytes!("../icons-tray/idle-template.png");
+#[cfg(target_os = "macos")]
+const RECORDING_ICON: &[u8] = include_bytes!("../icons-tray/recording-template.png");
+#[cfg(not(target_os = "macos"))]
+const IDLE_ICON: &[u8] = include_bytes!("../icons-tray/idle.png");
+#[cfg(not(target_os = "macos"))]
+const RECORDING_ICON: &[u8] = include_bytes!("../icons-tray/recording.png");
+const TEMPLATE: bool = cfg!(target_os = "macos");
+
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let start_item = MenuItem::with_id(app, "start", "Start Recording", true, None::<&str>)?;
     let open_item = MenuItem::with_id(app, "open", "Settings", true, None::<&str>)?;
@@ -34,7 +47,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(Image::from_bytes(include_bytes!("../icons-tray/idle.png"))?)
+        .icon(Image::from_bytes(IDLE_ICON)?)
+        .icon_as_template(TEMPLATE)
         .title("ears")
         .tooltip("ears - click to record")
         .menu(&menu)
@@ -80,13 +94,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
 pub fn set_tray_recording(app: &AppHandle, recording: bool) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let icon_bytes: &[u8] = if recording {
-            include_bytes!("../icons-tray/recording.png")
-        } else {
-            include_bytes!("../icons-tray/idle.png")
-        };
+        let icon_bytes = if recording { RECORDING_ICON } else { IDLE_ICON };
         if let Ok(icon) = Image::from_bytes(icon_bytes) {
             let _ = tray.set_icon(Some(icon));
+            let _ = tray.set_icon_as_template(TEMPLATE);
         }
         let tooltip = if recording {
             "ears - recording (click to stop)"

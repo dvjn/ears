@@ -63,6 +63,7 @@ pub fn run() {
             get_settings,
             save_settings,
             check_provider,
+            copy_text,
             list_input_devices,
             switch_mic,
             get_status,
