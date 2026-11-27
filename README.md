@@ -34,10 +34,19 @@ it, or skip them and use a hosted api.
 
 ## install
 
-on arch, from the aur: `ears-bin`, and on the gpu machine `ears-stt-bin` and
-`ears-llm-bin` (they use the gpu through vulkan). other
+on arch, from the signed `[ears]` pacman repository, which every release
+updates: `ears-bin`, and on the gpu machine `ears-stt-bin` and `ears-llm-bin`
+(they use the gpu through vulkan). the same packages are on the aur. other
 platforms: download the app from the
 [releases](https://github.com/dvjn/ears/releases) page.
+
+```sh
+# trust the signing key, then add the repository
+curl -fsSL https://raw.githubusercontent.com/dvjn/ears/main/packaging/ears.gpg | sudo pacman-key --add -
+sudo pacman-key --lsign-key 4DDA82BEE1876C012B370C206EE7D0F38E85F53D
+printf '\n[ears]\nServer = https://github.com/dvjn/ears/releases/latest/download\n' | sudo tee -a /etc/pacman.conf
+sudo pacman -Sy ears-bin            # and ears-stt-bin ears-llm-bin on the gpu machine
+```
 
 ```sh
 # gpu machine
