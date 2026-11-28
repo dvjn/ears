@@ -262,23 +262,10 @@ jobs:
       - name: Install dependencies
         run: pacman -Syu --noconfirm --needed git openssh pacman-contrib
 
-      - name: Set up ssh for the AUR
+      - name: Push to the AUR
         # AUR_SSH_KEY: a private key registered with the AUR account that
-        # maintains the packages. The host key is pinned from
-        # https://aur.archlinux.org (ED25519 SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4).
+        # maintains the packages.
         env:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
-        run: |
-          useradd -m builder
-          chown -R builder .
-          install -d -m 700 -o builder ~builder/.ssh
-          printf '%s\n' "$AUR_SSH_KEY" > ~builder/.ssh/aur
-          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > ~builder/.ssh/known_hosts
-          printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n  IdentitiesOnly yes\n' > ~builder/.ssh/config
-          chown builder ~builder/.ssh/*
-          chmod 600 ~builder/.ssh/aur
-
-      - name: Push to the AUR
-        env:
           TAG: ${{ inputs.tag }}
-        run: su builder -c "packaging/aur-publish.sh $TAG"
+        run: packaging/aur/publish.sh "$TAG"

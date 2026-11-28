@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Publish a release's -bin packages to the AUR.
 #
-#   packaging/aur-publish.sh [--dry-run] VERSION
+#   packaging/aur/publish.sh [--dry-run] VERSION
 #
 # The AUR packages ship the same release assets as the [ears] repository's
 # packages in packaging/<name>, under the AUR's naming for prebuilt packages:
@@ -10,24 +10,32 @@
 #
 # For each package this clones the AUR repository, writes the derived PKGBUILD,
 # install file and .SRCINFO, fills in the checksums from the published release,
-# and commits. Without --dry-run it pushes over ssh, which needs an ssh key
-# registered with the AUR account that maintains the packages. With --dry-run it
-# clones over https, builds each package to check it, shows the commit, and
-# pushes nothing.
+# and commits. Without --dry-run it pushes over ssh as the AUR account that
+# maintains the packages: with the private key in $AUR_SSH_KEY when set (CI,
+# using ssh_config and the pinned known_hosts next to this script), otherwise
+# with your own ssh setup. With --dry-run it clones over https, builds each
+# package to check it, shows the commit, and pushes nothing.
 #
-# Run it as a normal user (makepkg refuses root), after the release is
-# published: the checksums come from its public downloads.
+# Run it after the release is published: the checksums come from its public
+# downloads. makepkg refuses root, so as root (a CI container) it reruns itself
+# as an unprivileged user.
 set -euo pipefail
+
+if [[ $EUID -eq 0 ]]; then
+    id builder &>/dev/null || useradd --create-home builder
+    exec runuser -u builder -- "${BASH_SOURCE[0]}" "$@"
+fi
 
 dry_run=false
 if [[ ${1:-} == --dry-run ]]; then
     dry_run=true
     shift
 fi
-version=${1:?usage: aur-publish.sh [--dry-run] VERSION}
+version=${1:?usage: publish.sh [--dry-run] VERSION}
 version=${version#v}
 
-packaging=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+aur=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+packaging=$(dirname "$aur")
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 # Downloads go outside the package repositories, so they never get committed.
@@ -38,6 +46,10 @@ if $dry_run; then
     remote=https://aur.archlinux.org
 else
     remote=ssh://aur@aur.archlinux.org
+    if [[ -n ${AUR_SSH_KEY:-} ]]; then
+        (umask 077 && printf '%s\n' "$AUR_SSH_KEY" >"$work/aur_key")
+        export GIT_SSH_COMMAND="ssh -F $aur/ssh_config -i $work/aur_key -o UserKnownHostsFile=$aur/known_hosts"
+    fi
 fi
 
 # Writes the AUR package for $1 into directory $2.

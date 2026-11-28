@@ -1,0 +1,6 @@
+# ssh for pushing to the AUR with the key in $AUR_SSH_KEY; publish.sh passes
+# the key file and these paths on the command line.
+Host aur.archlinux.org
+    User aur
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
