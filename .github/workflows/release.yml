@@ -246,3 +246,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag }}
         run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
+  aur:
+    # The same packages on the AUR as ears-bin, ears-stt-bin and ears-llm-bin,
+    # for those who use an AUR helper instead of adding the [ears] repository.
+    # After publish: the AUR PKGBUILDs download the public release assets.
+    needs: publish
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed git openssh pacman-contrib
+
+      - name: Push to the AUR
+        # AUR_SSH_KEY: a private key registered with the AUR account that
+        # maintains the packages.
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          TAG: ${{ inputs.tag }}
+        run: packaging/aur/publish.sh "$TAG"
