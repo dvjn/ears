@@ -60,6 +60,9 @@ printf '\n[ears]\nServer = https://github.com/dvjn/ears/releases/latest/download
 sudo pacman -Syu ears
 ```
 
+or install `ears-bin` from the AUR with your AUR helper (`ears-stt-bin` and
+`ears-llm-bin` for the servers).
+
 start ears with your session:
 
 ```sh
